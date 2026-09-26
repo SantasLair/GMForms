@@ -12,7 +12,8 @@ Delphi-style RAD form system for GameMaker (runtime library + later a visual des
 - **M3 (Tier 1 controls) is done and verified.** CheckBox, Splitter, Viewport, Edit are all in, plus the small core additions Edit needed (`key_char` hook, clipboard-key + typed-character forwarding — see "M3 notes" below). `[GMForms tests] 208 passed, 0 failed` via `tools/gmtest.sh`; Viewport's surface/camera rendering was additionally confirmed with a manual screenshot check (the automated suite can only verify its coordinate math, not actual pixels).
 - **M4 (PropertyGrid + undo) is done and verified headlessly.** `GMF_UndoStack` (`scripts/gmforms_undo`), `GMF_PropertyGrid` (`scripts/gmforms_controls_propgrid`), and the hand-built tile editor sample (`scripts/demo_tiles`, `rm_demo_tiles`, now the **first room**). `[GMForms tests] 309 passed, 0 failed` via `tools/gmtest.sh`; the sample's rendering was checked with a scripted screenshot run (`DEMO_TILES_CAPTURE`, see M4 notes). Hands-on mouse/keyboard use of the sample (painting strokes, dragging the grid divider/scrollbar) has **not** been exercised yet — do that in the IDE before building on it.
 - **M5 (Tier 2 controls) is done and verified headlessly.** It adds a popup layer in `GMF_Form` and ListBox, TreeView, ComboBox, SpritePicker (`scripts/gmforms_controls_lists`), MenuBar + PopupMenu with context menus and shortcuts (`scripts/gmforms_controls_menus`), TabControl + Toolbar (`scripts/gmforms_controls_containers`), and SpinEdit, Slider, ColorPicker (`scripts/gmforms_controls_values`). The PropertyGrid now uses dropdowns for enum/sprite values and the colour popup for colours. `[GMForms tests] 433 passed, 0 failed`. The acceptance criterion ("menus and dropdowns render above everything and close correctly on outside click/Escape") is covered by tests that drive the real input path (`simulate_click`/`simulate_key`) and by scripted screenshots of both demos (`DEMO_TILES_CAPTURE`, `DEMO_M5_CAPTURE`). None of this has been used by hand with a real mouse and keyboard yet.
-- **Next: M6 Designer MVP** (plan section 14).
+- **M6 (Designer MVP) is done and verified headlessly.** The designer (`rm_designer`, scripts in the `Designer` folder) is built with the library itself. It has a palette, a structure tree, a design canvas (select, move, resize with snap, create, reparent, nudge, delete, restack, tab pages, context menu), a Properties/Events inspector, snapshot undo/redo, New/Open/Save, and handler-stub generation. **Acceptance:** `designer_script_tile_editor()` rebuilds the tile editor's form through the designer's own operations. Its output is the Included File `datafiles/tile_editor.gmform.json`, which the tile editor now loads, binding every event by name. A test rebuilds it and compares the result byte for byte. `[GMForms tests] 500 passed, 0 failed`, plus scripted screenshots of the designer (`DESIGNER_CAPTURE`). Real mouse and keyboard use hasn't been tried by hand yet, and neither have the native Open/Save dialogs (see M6 notes about the file sandbox).
+- **Next: M7 Release prep** (samples, docs, .yymps package).
 - Provisional answers to open questions, both easy to change:
   - **Q1:** constructors use the `GMF_` prefix.
   - **Q3:** a control with no left/right (or top/bottom) anchor keeps a proportional centre.
@@ -36,8 +37,13 @@ Delphi-style RAD form system for GameMaker (runtime library + later a visual des
 | `scripts/gmforms_undo` | `GMF_UndoStack`: command undo/redo, groups, `set_value`, `push_snapshot`; `gmforms_get_value` / `gmforms_put_value` |
 | `scripts/gmforms_host` + `objects/obj_gmforms_host` | Host object. Create one with `gmforms_host_create(form)` |
 | `scripts/gmforms_serialize` | Registry-driven JSON: `gmforms_form_to_json`, `gmforms_save_form`, `gmforms_load_form`/`gmforms_load_form_json`, `gmforms_value_equals` |
-| `scripts/gmforms_tests` | Headless test suite `gmforms_run_tests()` (433 checks). Runs in the first room's Create event when `GMF_RUN_TESTS` is true |
-| `scripts/demo_tiles` + `objects/obj_demo_tiles` + `rooms/rm_demo_tiles` | Tile editor sample (first room; M4, with a menu bar and toolbar since M5). `DEMO_TILES_CAPTURE` runs a scripted session, saves `m4_*.png`, then quits |
+| `scripts/gmforms_tests` | Headless test suite `gmforms_run_tests()` (500 checks). Runs in the first room's Create event when `GMF_RUN_TESTS` is true |
+| `scripts/demo_tiles` + `objects/obj_demo_tiles` + `rooms/rm_demo_tiles` | Tile editor sample (first room). Since M6 its UI is loaded from `datafiles/tile_editor.gmform.json`, with events bound by name to its `handlers` struct. `DEMO_TILES_CAPTURE` runs a scripted session, saves `m4_*.png`, then quits |
+| `scripts/designer_canvas` | `GMF_DesignCanvas`: shows the designed form (a real `GMF_Form` whose `update()` is never called) and edits it: select, move, resize, create, reparent, nudge, delete, restack, tab pages |
+| `scripts/designer_app` + `objects/obj_designer` + `rooms/rm_designer` | `DesignerApp`: the designer UI, snapshot undo, files, inspector wiring. `DESIGNER_EXPORT_TILES` re-exports the tile editor form |
+| `scripts/designer_codegen` | Handler stub generation: `gmforms_design_handlers_source(form, [existing])` and helpers |
+| `scripts/designer_scripts` | `designer_script_tile_editor()` (the M6 acceptance rebuild) and the `DESIGNER_CAPTURE` screenshot script |
+| `datafiles/tile_editor.gmform.json` | The tile editor's UI, made with the designer; an Included File that `DemoTilesApp` loads |
 | `scripts/demo_m5` + `objects/obj_demo_m5` + `rooms/rm_demo_m5` | M5 controls gallery (tile editor: File > Other demos). `DEMO_M5_CAPTURE` makes the first room jump there, saves `m5_*.png`, then quits |
 | `scripts/demo_m1` + `objects/obj_demo_m1` + `rooms/rm_demo_m1` | M1 layout demo (tile editor: File > Other demos). `GMF_DEMO_CAPTURE` saves screenshots, then quits |
 
@@ -74,6 +80,13 @@ Delphi-style RAD form system for GameMaker (runtime library + later a visual des
 - **`is_callable(x)` is true for plain numbers that are valid script indices**, so `12` or `true` can count as "callable". To detect function-valued fields, use `is_method()`. `is_callable(on_click)` on event fields is still fine because they're either `undefined` or a method.
 - **A `\` anywhere in a `#macro` line's trailing comment continues the macro onto the next line**, silently eating the next `#macro`. Don't put Windows paths with backslashes in macro comments.
 
+## GML gotchas found during M6
+
+- **`json_stringify` key order isn't stable between runs.** The same struct can serialize with its keys in a different order in another run. Form files and undo snapshots go through `gmforms_json_stringify` (deterministic key order, whole numbers without `.0`). Use it wherever output is compared or committed to git.
+- **`buffer_string` writes a trailing NUL**, so git sees the file as binary. Write text with `gmforms_write_text_file` (`buffer_text`) and read it with `gmforms_read_text_file`, which handles both kinds.
+- **GML has no scientific-notation literals.** `1e15` is a compile error; write `1000000000000000`.
+- **`struct_exists(handlers, name)` doesn't see static methods**, so a handlers struct passed to the loader must hold its methods as instance fields (e.g. `handlers = { btnSave_Click: method(_app, function(_s) {...}) }`, with `var _app = self;` captured first).
+
 ## Editing the project from outside the IDE
 
 - **The IDE can overwrite your edits.** If the project is open in the GameMaker IDE, it notices external file changes after a few seconds. If Run is pressed before that, it can **write its in-memory copy back over your edit**. Wait about 10–15 s after editing, then re-check the file on disk before running.
@@ -106,6 +119,7 @@ Delphi-style RAD form system for GameMaker (runtime library + later a visual des
   tools/gmtest.sh --timeout=60     # override the 90s default wait for the result line
   tools/gmtest.sh --log            # print the whole cleaned log: use it to read a runtime crash (FATAL ERROR + stack)
   tools/gmtest.sh --until="capture dir" --timeout=150   # keep running until that log line (screenshot runs) or a crash
+  # Scripted runs that start elsewhere: DEMO_M5_CAPTURE, DESIGNER_CAPTURE and DESIGNER_EXPORT_TILES make the first room jump to their room.
   ```
   This is the tool to reach for whenever GML changes need verifying — don't fall back to "can't test without the IDE." Use it after *any* GML edit, the same way you'd run a test suite in any other language.
   - **What it does under the hood**, if it ever needs debugging or reproducing by hand: runs `npx --yes @gamemaker/gm-cli@latest run GMForms.yyp --target=windows --runtime=vm --verbose` in the background (it never exits on its own — the demos only self-quit when their `*_CAPTURE` macro is `true`), polls the log for the `[GMForms tests] N passed` summary or the process dying early (build failure), then kills it. It must wait for the *summary*: `[GMForms tests] FAIL ...` lines come first, and before M4 the script stopped at the first one and killed the game mid-suite, which looked like a crash. A runtime crash before the summary shows up as "no '[GMForms tests]' line" plus the full log.
@@ -161,3 +175,20 @@ CheckBox, Splitter and Viewport were pure additions. Edit needed two small, addi
 - **TreeView** nodes are plain JSON-able structs `{ text, nodes, expanded, data }` without parent links (those would make `json_stringify` recurse); parents are found by search. Rows are flattened lazily; call `refresh()` after mutating nodes directly.
 - **SpritePicker** lists `asset_get_ids(asset_sprite)` unless `sprites`/`labels` are set. `sprite` is a runtime reference, so it isn't published. The demos make their sprites at runtime (`demo_m5_make_sprite`) because the project has no sprite assets.
 - **Other additive changes:** `GMF_Control.popup_menu`, `handle_shortcut()`, `popup_closed()`; `gmforms_inherited()` in core; new theme keys `list_*`, `menu_*`, `tab_*`, `slider_*`, `popup_shadow` (both themes). The tile editor now has a MenuBar, a Toolbar and an inspector context menu; its old hand-written Ctrl+Z/Y/S/O handling is gone.
+
+## M6 notes (Designer MVP — done)
+
+- **Design mode = the runtime, not updated.** `GMF_DesignCanvas` lays the designed `GMF_Form` out itself (`_layout_target`: design pass, then `_sx/_sy` = canvas + `offset_x/y`) and draws it, but never calls its `update()`, so no events fire. It hit-tests with its own `_hit` (which can exclude the dragged subtree). Containers are Form, Panel, TabSheet and Toolbar, and a TabControl counts as its active page; a custom class can set `design_container = true`. Invisible controls aren't drawn or hit, so select them in the structure tree.
+- **Every edit is one snapshot.** `on_modified` → `DesignerApp.commit(label)` serializes the whole form and pushes `push_snapshot(before, after)` if it changed. Undo/redo rebuild the form from JSON and reselect by name. Old control structs are thrown away on every undo, so never hold on to a designed control across a commit/undo; look it up again with `target.find(name)`.
+- **Anchors after a form resize.** Changing the design size moves anchored controls, so `set_form_size` / the form handle reset `_anchor_captured` on the whole tree. The current rects then become the new design rects, which is what gets saved.
+- **Inspector.** Properties use `props_grid.bind_control(selected)`: renames are validated for uniqueness (refused and reverted if taken), and `MenuBar.menus` is an editable list of items with nested submenus (+/× buttons, caption / shortcut / onClick name). Events use a proxy struct (event → handler name) whose `set_fn` writes `ctrl._ev_names`. Double-clicking an empty event gives `<control>_<Event>`, and double-clicking an empty menu-item onClick gives `<menubar>_<Caption>_Click`.
+- **Library changes for M6 (additive).**
+  - `MenuBar.menus` is published (type `"menus"`; items saved with `onClick` handler *names*, `item.on_click_name`).
+  - The loader stays silent about unresolved names when no handlers struct is passed (the design-time case).
+  - PropertyGrid: `element` / `resizable` / `new_element` / `label_field` metadata for arrays, `add_element` / `remove_element`, `on_dbl_click`, and rows know their `parent_row`.
+  - Core: `gmforms_write_text_file` / `gmforms_read_text_file` and `global.gmforms.log_count` (tests assert "no warnings").
+  - Serializer: `gmforms_json_stringify`.
+  - Form: `simulate_drag`.
+- **Files and the sandbox.** Open/Save/Generate use `get_open_filename_ext` / `get_save_filename_ext`. With the Windows file system sandbox on (it is), reading or writing outside the save area may fail; the designer reports that in the status bar instead of crashing. **This hasn't been verified**, because native dialogs can't run headless. "Save to the save area", "Open the tile editor's form" (Included File) and "Copy handler stubs" (clipboard) always work. Disabling the sandbox (Game Options → Windows) is the documented alternative (plan section 15).
+- **Regenerating the tile editor form:** set `DESIGNER_EXPORT_TILES` to `true`, run `tools/gmtest.sh --until="capture dir" --timeout=150`, copy `%LOCALAPPDATA%\GMForms\tile_editor.gmform.json` to `datafiles/`, delete the save-area copy (it would shadow the Included File), and set the macro back. The "designer rebuild matches it byte for byte" test fails until you do this after changing `designer_script_tile_editor` or the serializer.
+- **Not in the MVP (plan "Later"):** live preview, multi-select, align tools, copy/paste, editing context menus. Controls can't be dragged out of a Toolbar's flow except by reparenting them.

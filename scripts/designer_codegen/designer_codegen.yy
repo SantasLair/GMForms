@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"designer_codegen",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"designer_codegen",
+  "parent":{
+    "name":"Designer",
+    "path":"folders/Designer.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

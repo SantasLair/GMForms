@@ -9,7 +9,10 @@
 ///   alt_shortcut             optional second binding, not displayed (e.g. Ctrl+Shift+Z next to Ctrl+Y)
 ///   items                    array of items = a submenu
 ///
-/// Menus are code-only for now: item structs hold functions, so they are not serialized.
+/// Serialization (M6): a GMF_MenuBar's `menus` are saved with each on_click as a handler *name*
+/// (item.on_click_name, JSON key "onClick") and resolved against the handlers struct on load, like
+/// control events. Items built in code with a function but no name are saved without an onClick.
+/// Context menus (control.popup_menu) are still code-only.
 
 /// @func gmforms_menu_item(caption, [on_click], [props])
 /// @desc A menu item. props can set shortcut, enabled, checked, visible, data, items.
@@ -24,6 +27,7 @@ function gmforms_menu_item(_caption, _on_click = undefined, _props = undefined) 
         visible: true,
         separator: false,
         data: undefined,
+        on_click_name: "",      // handler name when loaded from JSON / set in the designer
     };
     if (is_struct(_props)) {
         var _keys = struct_get_names(_props);
@@ -368,6 +372,7 @@ function GMF_MenuBar() : GMF_Control() constructor {
     static published = array_concat(gmforms_base_published(), [
         { name: "align",  type: "enum", values: ["none", "top", "bottom", "left", "right", "client"], default_value: "top" },
         { name: "height", type: "int",  default_value: 24 },
+        { name: "menus",  type: "menus", default_value: [] },
     ]);
 
     /// @func add_menu(caption, items)
@@ -488,5 +493,89 @@ function GMF_MenuBar() : GMF_Control() constructor {
             gmforms_draw_text_in(_sx + _r[_i].x, _sy, _r[_i].w, height, menus[_i].caption,
                 menus[_i].enabled ? _th.text : _th.text_disabled, fa_center, fa_middle, 0);
         }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Serialization (M6)
+// ---------------------------------------------------------------------------
+
+/// @func gmforms_menus_to_json(items)
+/// @desc Menu items -> plain JSON-able structs. Only non-default fields are written; on_click is
+///       written as its handler name ("onClick": item.on_click_name) when it has one.
+function gmforms_menus_to_json(_items) {
+    var _out = [];
+    if (!is_array(_items)) return _out;
+    var _n = array_length(_items);
+    for (var _i = 0; _i < _n; _i++) {
+        var _it = _items[_i];
+        var _j = { caption: _it[$ "caption"] ?? "" };
+        if (_it[$ "separator"] == true) _j.separator = true;
+        if ((_it[$ "shortcut"] ?? "") != "") _j.shortcut = _it.shortcut;
+        if ((_it[$ "alt_shortcut"] ?? "") != "") _j.alt_shortcut = _it.alt_shortcut;
+        if ((_it[$ "on_click_name"] ?? "") != "") _j.onClick = _it.on_click_name;
+        if (_it[$ "enabled"] == false) _j.enabled = false;
+        if (_it[$ "checked"] == true) _j.checked = true;
+        if (_it[$ "visible"] == false) _j.visible = false;
+        if (is_array(_it[$ "items"]) && array_length(_it.items) > 0) _j.items = gmforms_menus_to_json(_it.items);
+        array_push(_out, _j);
+    }
+    return _out;
+}
+
+/// @func gmforms_menus_from_json(array, [handlers], [warned])
+/// @desc Plain structs (from JSON) -> menu items, resolving "onClick" names against handlers.
+function gmforms_menus_from_json(_arr, _handlers = undefined, _warned = undefined) {
+    var _out = [];
+    if (!is_array(_arr)) return _out;
+    _warned ??= {};
+    var _n = array_length(_arr);
+    for (var _i = 0; _i < _n; _i++) {
+        var _j = _arr[_i];
+        if (!is_struct(_j)) continue;
+        var _it = gmforms_menu_item(_j[$ "caption"] ?? "");
+        _it.separator = (_j[$ "separator"] == true);
+        _it.shortcut = _j[$ "shortcut"] ?? "";
+        if (struct_exists(_j, "alt_shortcut")) _it.alt_shortcut = _j.alt_shortcut;
+        _it.enabled = (_j[$ "enabled"] ?? true) == true;
+        _it.checked = (_j[$ "checked"] == true);
+        _it.visible = (_j[$ "visible"] ?? true) == true;
+        var _name = _j[$ "onClick"] ?? "";
+        if (_name != "") {
+            _it.on_click_name = _name;
+            _it.on_click = __gmforms_resolve_handler(_handlers, _name, _warned, "menu item '" + _it.caption + "'");
+        }
+        if (is_array(_j[$ "items"])) _it.items = gmforms_menus_from_json(_j.items, _handlers, _warned);
+        array_push(_out, _it);
+    }
+    return _out;
+}
+
+/// @func gmforms_menu_item_meta([depth])
+/// @desc PropertyGrid metadata for one menu item (used for MenuBar.menus in the designer's inspector).
+///       Submenus nest `depth` levels deep.
+function gmforms_menu_item_meta(_depth = 3) {
+    var _fields = [
+        { name: "caption",   type: "string" },
+        { name: "shortcut",  type: "string" },
+        { name: "onClick",   field: "on_click_name", type: "string" },
+        { name: "separator", type: "bool" },
+        { name: "enabled",   type: "bool" },
+        { name: "checked",   type: "bool" },
+    ];
+    if (_depth > 0) array_push(_fields, gmforms_menu_list_meta("items", _depth - 1));
+    return { type: "struct", fields: _fields };
+}
+
+/// @func gmforms_menu_list_meta(name, [depth])
+/// @desc PropertyGrid metadata for an array of menu items with + / x buttons to add and remove items.
+function gmforms_menu_list_meta(_name, _depth = 3) {
+    return {
+        name: _name,
+        type: "array",
+        resizable: true,
+        label_field: "caption",
+        element: gmforms_menu_item_meta(_depth),
+        new_element: function() { return gmforms_menu_item("Item"); },
     };
 }

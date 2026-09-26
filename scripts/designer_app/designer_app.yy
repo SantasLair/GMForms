@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"designer_app",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"designer_app",
+  "parent":{
+    "name":"Designer",
+    "path":"folders/Designer.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

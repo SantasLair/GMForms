@@ -15,6 +15,7 @@ function gmforms_init() {
         scissor_scale_x: 1,
         scissor_scale_y: 1,
         log_enabled: true,
+        log_count: 0,          // number of gmforms_log() calls so far (tests use it to assert "no warnings")
     };
     global.gmforms.theme = gmforms_theme_dark();
 
@@ -56,7 +57,9 @@ function gmforms_register(_class_name, _ctor) {
 /// @desc Writes a GMForms message to the output log. The library warns instead of crashing where it can.
 /// @param {Any} message
 function gmforms_log(_msg) {
-    if (gmforms_init().log_enabled) show_debug_message("[GMForms] " + string(_msg));
+    var _g = gmforms_init();
+    _g.log_count++;
+    if (_g.log_enabled) show_debug_message("[GMForms] " + string(_msg));
 }
 
 /// @func gmforms_theme()
@@ -82,6 +85,30 @@ function gmforms_create(_ctor, _props = undefined) {
     var _c = new _ctor();
     if (is_struct(_props)) _c.set(_props);
     return _c;
+}
+
+/// @func gmforms_write_text_file(path, text)
+/// @desc Writes UTF-8 text without a trailing NUL (so form files stay diffable text for git).
+function gmforms_write_text_file(_path, _text) {
+    var _buf = buffer_create(max(1, string_byte_length(_text)), buffer_grow, 1);
+    buffer_write(_buf, buffer_text, _text);
+    buffer_save(_buf, _path);
+    buffer_delete(_buf);
+}
+
+/// @func gmforms_read_text_file(path)
+/// @desc Reads a whole text file (with or without a trailing NUL). Returns undefined if it can't be read.
+function gmforms_read_text_file(_path) {
+    if (!file_exists(_path)) return undefined;
+    var _buf = buffer_load(_path);
+    if (_buf < 0) return undefined;
+    var _len = buffer_get_size(_buf);
+    buffer_resize(_buf, _len + 1);
+    buffer_poke(_buf, _len, buffer_u8, 0);
+    buffer_seek(_buf, buffer_seek_start, 0);
+    var _s = buffer_read(_buf, buffer_string);
+    buffer_delete(_buf);
+    return _s;
 }
 
 /// @func gmforms_inherited(self, ctor, name)

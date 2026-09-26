@@ -9,6 +9,7 @@
 
 #macro DEMO_TILES_FILE "tilemap.json"   // written to the save area (%LOCALAPPDATA%/GMForms on Windows; no backslash here, it continues a macro)
 #macro DEMO_TILES_CAPTURE false          // true: saves m4_*.png screenshots of a scripted session, then quits
+#macro DEMO_TILES_FORM "tile_editor.gmform.json"   // the UI, made with the designer (Included File)
 
 // ---------------------------------------------------------------------------
 // Document model (plain structs, so it saves as JSON and the PropertyGrid can edit it directly)
@@ -54,7 +55,7 @@ function demo_tiles_new_doc(_cols = 24, _rows = 16) {
 
 /// @func demo_tiles_to_json(doc)
 function demo_tiles_to_json(_doc) {
-    return json_stringify(_doc, true);
+    return gmforms_json_stringify(_doc, true);
 }
 
 /// @func demo_tiles_from_json(text)
@@ -82,23 +83,15 @@ function demo_tiles_from_json(_text) {
 /// @func demo_tiles_save(doc, filename)
 /// @returns {Bool}
 function demo_tiles_save(_doc, _filename) {
-    var _json = demo_tiles_to_json(_doc);
-    var _buf = buffer_create(string_byte_length(_json) + 1, buffer_grow, 1);
-    buffer_write(_buf, buffer_string, _json);
-    buffer_save(_buf, _filename);
-    buffer_delete(_buf);
+    gmforms_write_text_file(_filename, demo_tiles_to_json(_doc));
     return file_exists(_filename);
 }
 
 /// @func demo_tiles_load(filename)
 /// @returns {Struct|Undefined}
 function demo_tiles_load(_filename) {
-    if (!file_exists(_filename)) return undefined;
-    var _buf = buffer_load(_filename);
-    if (_buf < 0) return undefined;
-    var _text = buffer_read(_buf, buffer_string);
-    buffer_delete(_buf);
-    return demo_tiles_from_json(_text);
+    var _text = gmforms_read_text_file(_filename);
+    return (_text == undefined) ? undefined : demo_tiles_from_json(_text);
 }
 
 /// @func demo_tiles_paint(doc, undo, cx, cy, tile)
@@ -177,7 +170,7 @@ function DemoTileSwatch() : GMF_Control() constructor {
 // ---------------------------------------------------------------------------
 
 /// @func DemoTilesApp()
-/// @desc Builds the tile editor form and wires every event in code (event style B).
+/// @desc Loads the tile editor form (made with the designer) and binds its events by name (event style A).
 function DemoTilesApp() constructor {
     doc = demo_tiles_new_doc();
     undo = new GMF_UndoStack(500);
@@ -198,39 +191,8 @@ function DemoTilesApp() constructor {
         { name: "damage",   type: "int",    category: "Physics", min: 0, max: 100, step: 5, label: "damage/sec" },
     ];
 
-    // ---- form ----------------------------------------------------------------
-    form = gmforms_create(GMF_Form, { name: "frmTiles", caption: "GMForms - tile editor sample", width: 1024, height: 700 });
-
-    menu = form.add(gmforms_create(GMF_MenuBar, { name: "mbMain" }));
-    var _bar = form.add(gmforms_create(GMF_Toolbar, { name: "tbMain" }));
-    var _buttons = [
-        ["btnNew", "New"], ["btnOpen", "Open"], ["btnSave", "Save"], "-",
-        ["btnUndo", "Undo"], ["btnRedo", "Redo"], "-",
-        ["btnPaint", "Paint"], ["btnSelect", "Select"], "-",
-        ["btnClear", "Clear"], ["btnMapProps", "Map props"],
-    ];
-    for (var _i = 0; _i < array_length(_buttons); _i++) {
-        var _b = _buttons[_i];
-        if (is_string(_b)) _bar.add_separator();
-        else _bar.add_button(_b[1], undefined, { name: _b[0] });
-    }
     show_grid = true;
-
-    var _status_bar = form.add(gmforms_create(GMF_Panel, { name: "pnlStatus", align: "bottom", height: 26 }));
-    status = _status_bar.add(gmforms_create(GMF_Label, { name: "lblStatus", caption: "",
-        left: 4, top: 2, width: 1024 - 8, height: 22, anchors: ["left", "top", "right"] }));
-
-    palette = form.add(gmforms_create(GMF_Panel, { name: "pnlPalette", align: "left", width: 150, caption: "Tiles" }));
-    form.add(gmforms_create(GMF_Splitter, { name: "splPalette", align: "left", width: 4, min_size: 90 }));
-
-    var _insp = form.add(gmforms_create(GMF_Panel, { name: "pnlInspector", align: "right", width: 300 }));
-    inspector_caption = _insp.add(gmforms_create(GMF_Label, { name: "lblInspector", align: "top", height: 24, caption: "" }));
-    grid = _insp.add(gmforms_create(GMF_PropertyGrid, { name: "gridProps", align: "client", name_width: 120,
-        margin: { l: 4, t: 0, r: 4, b: 4 } }));
-    form.add(gmforms_create(GMF_Splitter, { name: "splInspector", align: "right", width: 4, min_size: 160 }));
-
-    vp = form.add(gmforms_create(GMF_Viewport, { name: "vpMap", align: "client" }));
-    vp.cam = { x: -16, y: -16, zoom: 0.7 };
+    // The form itself is loaded from a file at the end of this constructor (after the methods below).
 
     // ---- behaviour -------------------------------------------------------------
 
@@ -399,105 +361,109 @@ function DemoTilesApp() constructor {
         }
     };
 
-    // ---- wiring ----------------------------------------------------------------
-
-    // Menus: their shortcuts work from anywhere in the form (GMF_MenuBar.handle_shortcut).
-    menu.add_menu("File", [
-        gmforms_menu_item("New",  method(self, function(_s, _it) { load_doc(demo_tiles_new_doc(), "New map"); }), { shortcut: "Ctrl+N" }),
-        gmforms_menu_item("Open", method(self, function(_s, _it) { open_doc(); }), { shortcut: "Ctrl+O" }),
-        gmforms_menu_item("Save", method(self, function(_s, _it) { save_doc(); }), { shortcut: "Ctrl+S" }),
-        gmforms_menu_separator(),
-        gmforms_submenu("Other demos", [
-            gmforms_menu_item("M1 layout demo",     function(_s, _it) { room_goto(rm_demo_m1); }),
-            gmforms_menu_item("M5 controls gallery", function(_s, _it) { room_goto(rm_demo_m5); }),
-        ]),
-        gmforms_menu_separator(),
-        gmforms_menu_item("Exit", function(_s, _it) { game_end(); }),
-    ]);
-    mi_undo = gmforms_menu_item("Undo", method(self, function(_s, _it) { do_undo(); }), { shortcut: "Ctrl+Z" });
-    mi_redo = gmforms_menu_item("Redo", method(self, function(_s, _it) { do_redo(); }), { shortcut: "Ctrl+Y", alt_shortcut: "Ctrl+Shift+Z" });
-    menu.add_menu("Edit", [
-        mi_undo,
-        mi_redo,
-        gmforms_menu_separator(),
-        gmforms_menu_item("Clear map", method(self, function(_s, _it) { form.find("btnClear").click(); }), { shortcut: "Ctrl+Delete" }),
-    ]);
-    menu.add_menu("Tools", [
-        gmforms_menu_item("Paint",  method(self, function(_s, _it) { set_tool("paint"); update_status(); }), { shortcut: "Ctrl+1" }),
-        gmforms_menu_item("Select", method(self, function(_s, _it) { set_tool("select"); update_status(); }), { shortcut: "Ctrl+2" }),
-    ]);
-    menu.add_menu("View", [
-        gmforms_menu_item("Zoom in",    method(self, function(_s, _it) { zoom_by(1.25); }), { shortcut: "Ctrl+Up" }),
-        gmforms_menu_item("Zoom out",   method(self, function(_s, _it) { zoom_by(0.8); }), { shortcut: "Ctrl+Down" }),
-        gmforms_menu_item("Reset view", method(self, function(_s, _it) { vp.cam = { x: -16, y: -16, zoom: 0.7 }; update_status(); }), { shortcut: "Ctrl+0" }),
-        gmforms_menu_separator(),
-        gmforms_menu_item("Show grid", method(self, function(_s, _it) { show_grid = !show_grid; _it.checked = show_grid; }), { checked: true }),
-        gmforms_menu_item("Map properties", method(self, function(_s, _it) { inspect_map(); }), { shortcut: "F4" }),
-    ]);
-
-    // Right-click on the inspector: a context menu.
-    grid.popup_menu = gmforms_create(GMF_PopupMenu, { items: [
-        gmforms_menu_item("Inspect map properties", method(self, function(_s, _it) { inspect_map(); })),
-        gmforms_menu_item("Inspect current tile",   method(self, function(_s, _it) { if (cur_tile >= 0) inspect_tile(cur_tile); })),
-    ] });
-
-    form.find("btnNew").on_click      = method(self, function(_s) { load_doc(demo_tiles_new_doc(), "New map"); });
-    form.find("btnOpen").on_click     = method(self, function(_s) { open_doc(); });
-    form.find("btnSave").on_click     = method(self, function(_s) { save_doc(); });
-    form.find("btnUndo").on_click     = method(self, function(_s) { do_undo(); });
-    form.find("btnRedo").on_click     = method(self, function(_s) { do_redo(); });
-    form.find("btnPaint").on_click    = method(self, function(_s) { set_tool("paint"); update_status(); });
-    form.find("btnSelect").on_click   = method(self, function(_s) { set_tool("select"); update_status(); });
-    form.find("btnClear").on_click    = method(self, function(_s) {
+    // ---- form: designed with the GMForms designer ------------------------------------------
+    // The whole UI lives in datafiles/tile_editor.gmform.json (made by designer_script_tile_editor).
+    // Every event in it is bound by name to one of these methods (event style A).
+    var _app = self;   // inside a struct literal, self is the new struct
+    var _new    = method(_app, function() { load_doc(demo_tiles_new_doc(), "New map"); });
+    var _open   = method(_app, function() { open_doc(); });
+    var _save   = method(_app, function() { save_doc(); });
+    var _undo   = method(_app, function() { do_undo(); });
+    var _redo   = method(_app, function() { do_redo(); });
+    var _paint  = method(_app, function() { set_tool("paint"); update_status(); });
+    var _select = method(_app, function() { set_tool("select"); update_status(); });
+    var _clear  = method(_app, function() {
         demo_tiles_clear(doc, undo);
         set_status("Cleared the map (Undo restores it from a JSON snapshot)");
     });
-    form.find("btnMapProps").on_click = method(self, function(_s) { inspect_map(); });
-    undo.on_change = method(self, function(_u) {
-        form.find("btnUndo").set_enabled(_u.can_undo());
-        form.find("btnRedo").set_enabled(_u.can_redo());
-        mi_undo.enabled = _u.can_undo();
-        mi_redo.enabled = _u.can_redo();
-        mi_undo.caption = _u.can_undo() ? ("Undo " + _u.undo_label()) : "Undo";
-        mi_redo.caption = _u.can_redo() ? ("Redo " + _u.redo_label()) : "Redo";
-    });
+    var _map    = method(_app, function() { inspect_map(); });
+    handlers = {
+        btnNew_Click: _new,         mnuNew_Click: _new,
+        btnOpen_Click: _open,       mnuOpen_Click: _open,
+        btnSave_Click: _save,       mnuSave_Click: _save,
+        btnUndo_Click: _undo,       mnuUndo_Click: _undo,
+        btnRedo_Click: _redo,       mnuRedo_Click: _redo,
+        btnPaint_Click: _paint,     mnuPaint_Click: _paint,
+        btnSelect_Click: _select,   mnuSelect_Click: _select,
+        btnClear_Click: _clear,     mnuClear_Click: _clear,
+        btnMapProps_Click: _map,    mnuMapProps_Click: _map,
+        mnuDesigner_Click: function(_s, _it) { room_goto(rm_designer); },
+        mnuGallery_Click:  function(_s, _it) { room_goto(rm_demo_m5); },
+        mnuM1Demo_Click:   function(_s, _it) { room_goto(rm_demo_m1); },
+        mnuExit_Click:     function(_s, _it) { game_end(); },
+        mnuZoomIn_Click:    method(_app, function(_s, _it) { zoom_by(1.25); }),
+        mnuZoomOut_Click:   method(_app, function(_s, _it) { zoom_by(0.8); }),
+        mnuResetView_Click: method(_app, function(_s, _it) { vp.cam = { x: -16, y: -16, zoom: 0.7 }; update_status(); }),
+        mnuShowGrid_Click:  method(_app, function(_s, _it) { show_grid = !show_grid; _it.checked = show_grid; }),
+        gridProps_Change: method(_app, function(_s, _key, _old, _new_value, _owner) {
+            set_status("Set " + string(_key) + " = " + string(_new_value));
+        }),
+        vpMap_Draw: method(_app, function(_s, _cam) { draw_map(); }),
+        vpMap_MouseDown: method(_app, function(_s, _wx, _wy, _btn) {
+            if (tool == "paint" && (_btn == mb_left || _btn == mb_right)) {
+                painting = true;
+                paint_value = (_btn == mb_left) ? cur_tile : -1;
+                undo.begin_group((paint_value < 0) ? "Erase stroke" : "Paint stroke");
+                _last_wx = _wx;
+                _last_wy = _wy;
+                paint_to(_wx, _wy);
+                return;
+            }
+            var _i = cell_at(_wx, _wy);
+            if (tool == "select" && _i >= 0) {
+                if (_btn == mb_left) inspect_cell(_i);
+                else if (_btn == mb_right && doc.cells[_i].t >= 0) { cur_tile = doc.cells[_i].t; update_status(); }
+            }
+        }),
+        vpMap_MouseMove: method(_app, function(_s, _wx, _wy) {
+            hover_cell = cell_at(_wx, _wy);
+            if (painting) paint_to(_wx, _wy);
+            update_status();
+        }),
+        vpMap_MouseUp: method(_app, function(_s, _wx, _wy, _btn) {
+            if (!painting) return;
+            painting = false;
+            undo.end_group();
+        }),
+        vpMap_Wheel: method(_app, function(_s, _d) { update_status(); }),
+    };
 
-    grid.undo = undo;
-    grid.on_change = method(self, function(_s, _key, _old, _new, _owner) {
-        set_status("Set " + string(_key) + " = " + string(_new));
-    });
+    form = gmforms_load_form(DEMO_TILES_FORM, handlers);
+    if (form == undefined) {
+        // fail softly: show what's wrong instead of crashing
+        form = gmforms_create(GMF_Form, { caption: "Tile editor - form file missing", width: 1024, height: 700 });
+        form.add(gmforms_create(GMF_Label, { left: 16, top: 16, width: 900,
+            caption: DEMO_TILES_FORM + " could not be loaded (it should be an Included File) - see the Output log" }));
+    } else {
+        menu = form.find("mbMain");
+        status = form.find("lblStatus");
+        palette = form.find("pnlPalette");
+        inspector_caption = form.find("lblInspector");
+        grid = form.find("gridProps");
+        vp = form.find("vpMap");
+        mi_undo = menu.find_item("Undo");
+        mi_redo = menu.find_item("Redo");
+        vp.cam = { x: -16, y: -16, zoom: 0.7 };
 
-    vp.on_draw = method(self, function(_s, _cam) { draw_map(); });
-    vp.on_mouse_down = method(self, function(_s, _wx, _wy, _btn) {
-        if (tool == "paint" && (_btn == mb_left || _btn == mb_right)) {
-            painting = true;
-            paint_value = (_btn == mb_left) ? cur_tile : -1;
-            undo.begin_group((paint_value < 0) ? "Erase stroke" : "Paint stroke");
-            _last_wx = _wx;
-            _last_wy = _wy;
-            paint_to(_wx, _wy);
-            return;
-        }
-        var _i = cell_at(_wx, _wy);
-        if (tool == "select" && _i >= 0) {
-            if (_btn == mb_left) inspect_cell(_i);
-            else if (_btn == mb_right && doc.cells[_i].t >= 0) { cur_tile = doc.cells[_i].t; update_status(); }
-        }
-    });
-    vp.on_mouse_move = method(self, function(_s, _wx, _wy) {
-        hover_cell = cell_at(_wx, _wy);
-        if (painting) paint_to(_wx, _wy);
-        update_status();
-    });
-    vp.on_mouse_up = method(self, function(_s, _wx, _wy, _btn) {
-        if (!painting) return;
-        painting = false;
-        undo.end_group();
-    });
-    vp.on_wheel = method(self, function(_s, _d) { update_status(); });
+        // Right-click on the inspector: a context menu (context menus are still code-only).
+        grid.popup_menu = gmforms_create(GMF_PopupMenu, { items: [
+            gmforms_menu_item("Inspect map properties", method(self, function(_s, _it) { inspect_map(); })),
+            gmforms_menu_item("Inspect current tile",   method(self, function(_s, _it) { if (cur_tile >= 0) inspect_tile(cur_tile); })),
+        ] });
 
-    set_tool("paint");
-    load_doc(doc, "Paint with the left mouse button, erase with the right. Middle-drag pans, wheel zooms.");
+        undo.on_change = method(self, function(_u) {
+            form.find("btnUndo").set_enabled(_u.can_undo());
+            form.find("btnRedo").set_enabled(_u.can_redo());
+            mi_undo.enabled = _u.can_undo();
+            mi_redo.enabled = _u.can_redo();
+            mi_undo.caption = _u.can_undo() ? ("Undo " + _u.undo_label()) : "Undo";
+            mi_redo.caption = _u.can_redo() ? ("Redo " + _u.redo_label()) : "Redo";
+        });
+        grid.undo = undo;
+
+        set_tool("paint");
+        load_doc(doc, "Paint with the left mouse button, erase with the right. Middle-drag pans, wheel zooms.");
+    }
 }
 
 /// @func demo_tiles_capture_step(app, frame)

@@ -977,6 +977,185 @@ function gmforms_run_tests() {
     _t.eq("M5 tree nodes survive JSON", _m5tree.find("tv").nodes[0].nodes[0].text, "leaf");
     _t.eq("M5 spin value survives JSON", _m5tree.find("se").value, 5);
 
+    // --- M6: menu serialization, design-time loads, text files ---------------------------------
+    var _mbf = gmforms_create(GMF_Form, { name: "frmMenus", width: 300, height: 200 });
+    var _mbar = _mbf.add(gmforms_create(GMF_MenuBar, { name: "mb" }));
+    var _mi = gmforms_menu_item("Save", undefined, { shortcut: "Ctrl+S" });
+    _mi.on_click_name = "doSave";
+    _mbar.menus = [ gmforms_submenu("File", [ _mi, gmforms_menu_separator(), gmforms_menu_item("Code only", function(_s, _it) {}) ]) ];
+    var _mj = gmforms_form_to_json(_mbf);
+    var _hs = { called: 0 };
+    _hs.doSave = method(_hs, function(_s, _it) { called++; });
+    var _mbf2 = gmforms_load_form_json(_mj, _hs);
+    _t.eq("menus: JSON round trip", gmforms_form_to_json(_mbf2), _mj);
+    var _mb2 = _mbf2.find("mb");
+    _t.eq("menus: onClick bound by name drives the shortcut", _mb2.handle_shortcut(ord("S"), true, false, false), true);
+    _t.eq("menus: handler called", _hs.called, 1);
+    _t.eq("menus: separator survives", _mb2.menus[0].items[1].separator, true);
+    _t.eq("menus: a code-only item is saved without onClick", string_count("onClick", _mj), 1);
+    var _lc0 = gmforms_init().log_count;
+    gmforms_load_form_json(_mj);
+    _t.eq("load without a handlers struct is silent (design time)", gmforms_init().log_count, _lc0);
+    gmforms_load_form_json(_mj, {});
+    _t.eq("load with handlers warns about a missing one", gmforms_init().log_count, _lc0 + 1);
+
+    gmforms_write_text_file("gmforms_test.txt", "line 1\nline 2");
+    _t.eq("text file round trip", gmforms_read_text_file("gmforms_test.txt"), "line 1\nline 2");
+    var _tb_buf = buffer_load("gmforms_test.txt");
+    _t.eq("text file has no trailing NUL", buffer_get_size(_tb_buf), 13);
+    buffer_delete(_tb_buf);
+    file_delete("gmforms_test.txt");
+    _t.eq("missing text file reads as undefined", gmforms_read_text_file("no_such_file.txt"), undefined);
+
+    // --- M6: PropertyGrid arrays (+ / x) and double-click -----------------------------------------
+    var _arrobj = { tags: ["a", "b"] };
+    var _au = new GMF_UndoStack();
+    _pg.undo = _au;
+    _pg.bind(_arrobj, [{ name: "tags", type: "array", resizable: true, element: { type: "string" } }]);
+    _pg.add_element(_pg.find_row("tags"));
+    _t.eq("pg array: + appends a copy of the last item", gmforms_value_equals(_arrobj.tags, ["a", "b", "b"]), true);
+    _pg.remove_element(_pg.find_row("tags.0"));
+    _t.eq("pg array: x removes that item", gmforms_value_equals(_arrobj.tags, ["b", "b"]), true);
+    _au.undo();
+    _au.undo();
+    _t.eq("pg array: both undoable", gmforms_value_equals(_arrobj.tags, ["a", "b"]), true);
+    _pg.undo = undefined;
+
+    _pg.bind_control(_mbar);
+    var _mrow = _pg.find_row("menus");
+    _t.eq("pg menus: MenuBar.menus is an editable list", _pg.get_row(_mrow).meta.resizable, true);
+    _pg.add_element(_mrow);
+    _t.eq("pg menus: + adds an item", _mbar.menus[1].caption, "Item");
+    _pg.set_expanded("menus.1", true);
+    _pg.set_row_value(_pg.find_row("menus.1.caption"), "Help");
+    _t.eq("pg menus: caption edit", _mbar.menus[1].caption, "Help");
+    _t.eq("pg menus: item row label shows the caption", _pg.get_row(_pg.find_row("menus.1")).label, "[1] Help");
+    _pg.set_row_value(_pg.find_row("menus.1.onClick"), "mnuHelp_Click");
+    _t.eq("pg menus: onClick edits the handler name", _mbar.menus[1].on_click_name, "mnuHelp_Click");
+
+    var _dbl = { key: "" };
+    _pg.bind({ alpha: "x", beta: "y" });
+    _pg.on_dbl_click = method(_dbl, function(_s, _k, _o) { key = _k; });
+    _pgf.layout();
+    _pgf.simulate_click(20, 22 + 5);
+    _pgf.simulate_click(20, 22 + 5);
+    _t.eq("pg: double-click fires on_dbl_click with the key", _dbl.key, "beta");
+    _pg.on_dbl_click = undefined;
+    _pg.bind(undefined);
+
+    // --- M6: handler stub generation ------------------------------------------------------------------
+    var _cgf = gmforms_create(GMF_Form, { name: "frmCode", width: 300, height: 200 });
+    var _cgb = _cgf.add(gmforms_create(GMF_Button, { name: "btnGo" }));
+    _cgb._ev_names.on_click = "btnGo_Click";
+    _cgb._ev_names.on_mouse_down = "btnGo_MouseDown";
+    var _cgm = _cgf.add(gmforms_create(GMF_MenuBar, { name: "mbCode" }));
+    var _cgq = gmforms_menu_item("Quit");
+    _cgq.on_click_name = "mnuQuit_Click";
+    _cgm.menus = [ gmforms_submenu("File", [ _cgq ]) ];
+    var _src = gmforms_design_handlers_source(_cgf);
+    _t.eq("codegen: constructor", string_pos("function frmCode_Handlers() constructor {", _src) > 0, true);
+    _t.eq("codegen: click stub", string_pos("btnGo_Click = function(_sender) {", _src) > 0, true);
+    _t.eq("codegen: mouse-down parameters", string_pos("btnGo_MouseDown = function(_sender, _x, _y, _button)", _src) > 0, true);
+    _t.eq("codegen: menu item stub", string_pos("mnuQuit_Click = function(_sender, _item)", _src) > 0, true);
+    var _edited = string_replace(_src, "btnGo_Click = function(_sender) {\n", "btnGo_Click = function(_sender) {\n        show_debug_message(\"user code\");\n");
+    _cgb._ev_names.on_mouse_enter = "btnGo_Enter";
+    var _src2 = gmforms_design_handlers_source(_cgf, _edited);
+    _t.eq("codegen: existing code is kept", string_pos("user code", _src2) > 0, true);
+    _t.eq("codegen: a new handler is appended", string_pos("btnGo_Enter = function(_sender)", _src2) > 0, true);
+    _t.eq("codegen: nothing is duplicated", string_count("btnGo_Click = function", _src2), 1);
+    _t.eq("codegen: appended inside the constructor", string_last_pos("}", _src2) > string_pos("btnGo_Enter", _src2), true);
+    _t.eq("codegen: regenerating again changes nothing", gmforms_design_handlers_source(_cgf, _src2), _src2);
+    _t.eq("codegen: handler identifiers", gmforms_design_ident("Open recent..."), "OpenRecent");
+
+    // --- M6: the designer, driven through its real input path --------------------------------------
+    var _da = new DesignerApp();
+    _da.form.layout();
+    _da.new_form({ name: "frmT", width: 400, height: 300 });
+    var _cv = _da.canvas;
+    _da.form.layout();
+    _cv._layout_target();
+    var _fx = _cv._sx + _cv.offset_x;
+    var _fy = _cv._sy + _cv.offset_y;
+
+    _cv.place_class = "Button";
+    _da.form.simulate_click(_fx + 42, _fy + 38);
+    var _db = _da.target.find("Button1");
+    _t.eq("designer: click places a control", _db != undefined, true);
+    _t.eq("designer: placed on the grid", _db.left == 40 && _db.top == 40, true);
+    _t.eq("designer: caption defaults to the name", _db.caption, "Button1");
+    _t.eq("designer: placing disarms the palette", _cv.place_class, "");
+    _t.eq("designer: the new control is selected", _cv.selected, _db);
+    _t.eq("designer: one undo step", _da.undo.undo_label(), "Create Button1");
+    _t.eq("designer: structure tree", _da.tree.nodes[0].nodes[0].text, "Button1 : Button");
+    _t.eq("designer: inspector bound", _da.props_grid.target, _db);
+
+    _cv.place_class = "Panel";
+    _da.form.simulate_drag(_fx + 160, _fy + 16, _fx + 360, _fy + 176);
+    _t.rect("designer: drag out a new control's rect", _da.target.find("Panel1"), 160, 16, 200, 160);
+
+    _da.form.simulate_drag(_fx + 60, _fy + 50, _fx + 220, _fy + 90);   // Button1 by (+160, +40)
+    _db = _da.target.find("Button1");
+    _t.eq("designer: dropping on a container reparents", _db.parent.name, "Panel1");
+    _t.eq("designer: reparenting keeps the screen position", _db.left == 40 && _db.top == 64, true);
+    _da.do_undo();
+    _t.eq("designer: undo restores the old parent", _da.target.find("Button1").parent, _da.target);
+    _t.eq("designer: undo keeps the selection by name", _cv.selected.name, "Button1");
+    _da.do_redo();
+    _t.eq("designer: redo", _da.target.find("Button1").parent.name, "Panel1");
+
+    _da.form.set_focus(_cv);
+    _cv.select(_da.target.find("Button1"));
+    _da.form.simulate_key(vk_right);
+    _t.eq("designer: arrow key nudges", _da.target.find("Button1").left, 41);
+    _da.form.simulate_key(vk_delete);
+    _t.eq("designer: Delete removes the selection", _da.target.find("Button1"), undefined);
+    _t.eq("designer: its parent is selected", _cv.selected.name, "Panel1");
+    _da.form.simulate_key(vk_escape);
+    _t.eq("designer: Escape selects the parent", _cv.selected, _da.target);
+
+    _cv.select(_da.target.find("Panel1"));
+    _da.form.simulate_drag(_fx + 360, _fy + 176, _fx + 392, _fy + 200);   // bottom-right handle
+    var _dp = _da.target.find("Panel1");
+    _t.eq("designer: a handle resizes (snapped)", _dp.width == 232 && _dp.height == 184, true);
+
+    _da.props_grid.set_row_value(_da.props_grid.find_row("name"), "pnlMain");
+    _t.eq("designer: rename through the inspector", _da.target.find("pnlMain") != undefined, true);
+    _da.props_grid.set_row_value(_da.props_grid.find_row("name"), "frmT");
+    _t.eq("designer: a duplicate name is refused", _da.target.find("pnlMain") != undefined, true);
+
+    var _ev_btn = _cv.create_control("Button", _da.target.find("pnlMain"), 8, 8);
+    _da.events_grid.select(_da.events_grid.find_row("onClick"));
+    _da.events_grid.on_dbl_click(_da.events_grid, "onClick", _da.events_grid.target);
+    _t.eq("designer: double-click names the handler <control>_<Event>", _ev_btn._ev_names[$ "on_click"], "Button1_Click");
+    _t.eq("designer: event binding is undoable", _da.undo.undo_label(), "Set onClick");
+
+    var _dtc = _cv.create_control("TabControl", _da.target, 8, 200, 200, 90);
+    _t.eq("designer: a new TabControl gets a page", array_length(_dtc.pages()), 1);
+    _cv.add_tab_page();
+    _t.eq("designer: add a tab page", _dtc.tab_index == 1 && _cv.selected.name == "TabSheet2", true);
+    var _ded = _cv.create_control("Edit", _dtc, 4, 4);
+    _t.eq("designer: dropping on a TabControl lands on its active page", _ded.parent.name, "TabSheet2");
+
+    _cv.set_form_size(480, 320);
+    _t.eq("designer: form design size", _da.target.width == 480 && _da.target.height == 320, true);
+    var _djson = gmforms_form_to_json(_da.target);
+    _t.eq("designer: the designed form round-trips", gmforms_form_to_json(gmforms_load_form_json(_djson)), _djson);
+
+    // --- M6 acceptance: the tile editor's form, rebuilt in the designer, is what the sample loads ---------
+    var _da2 = new DesignerApp();
+    designer_script_tile_editor(_da2);
+    var _tfile = gmforms_read_text_file(DEMO_TILES_FORM);
+    _t.eq("M6: datafiles/tile_editor.gmform.json is present", _tfile != undefined, true);
+    _t.eq("M6: the designer rebuild matches it byte for byte", gmforms_form_to_json(_da2.target), _tfile);
+    var _lc1 = gmforms_init().log_count;
+    var _tapp = new DemoTilesApp();
+    _t.eq("M6: the sample loads its designed form without warnings", gmforms_init().log_count, _lc1);
+    _t.eq("M6: toolbar button bound by name", is_callable(_tapp.form.find("btnSave").on_click), true);
+    _t.eq("M6: menu item bound by name", is_callable(_tapp.menu.find_item("Save").on_click), true);
+    _t.eq("M6: viewport events bound by name", is_callable(_tapp.vp.on_draw) && is_callable(_tapp.vp.on_mouse_down), true);
+    _tapp.form.dispatch_shortcut(ord("2"), true, false, false);
+    _t.eq("M6: a loaded menu shortcut drives the sample", _tapp.tool, "select");
+
     var _ok = (_t.failed == 0);
     show_debug_message("[GMForms tests] " + string(_t.passed) + " passed, " + string(_t.failed) + " failed");
     return _ok;

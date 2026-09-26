@@ -4,7 +4,7 @@
 
 Working name: **GMForms** (placeholder — rename freely)
 
-> **Progress (2026-09-26):** M1–M5 are done. M4, the key checkpoint, was a tile editor built by hand with the library (`scripts/demo_tiles`, first room). M5 added a popup layer in the form, MenuBar/PopupMenu (context menus, submenus, shortcuts), Toolbar, TabControl, ListBox, TreeView, ComboBox, SpinEdit, Slider, ColorPicker and SpritePicker, and the PropertyGrid now uses dropdowns and the colour popup (`scripts/demo_m5` gallery). Headless suite: `[GMForms tests] 433 passed, 0 failed` via `tools/gmtest.sh`, plus scripted screenshot checks of both samples; hands-on interactive use is still to be done in the IDE. Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi); Q6 → resolved, see section 18. Next up: **M6 Designer MVP**.
+> **Progress (2026-09-26):** M1–M6 are done. M4 (the key checkpoint) was a tile editor built by hand with the library. M5 added the popup layer and the Tier 2 controls. **M6 added the designer** (`rm_designer`, built with the library): palette, canvas editing, structure tree, Properties/Events inspector, snapshot undo, files, and handler stub generation. The tile editor's form was rebuilt through the designer's own operations into `datafiles/tile_editor.gmform.json`, and the sample now loads it; a test checks that the rebuild matches the file byte for byte. Headless suite: `[GMForms tests] 500 passed, 0 failed`, plus scripted screenshots. Still to do by hand in the IDE: interactive use, and the native file dialogs with the sandbox on. Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi); Q6 → resolved, see section 18. Next up: **M7 Release prep**.
 
 ---
 
@@ -370,6 +370,13 @@ Status bar
 - Default handler name on double-click in Events: `<controlName>_<Event>` (e.g. `btnSave_Click`).
 - Undo/redo for all edits.
 
+### Implementation notes (M6)
+- **Design mode** = a real `GMF_Form` laid out and drawn by `GMF_DesignCanvas` whose `update()` is never called, so events are suppressed with no special flag in the runtime.
+- **Undo** uses the snapshot fallback from section 13: every committed edit pushes the whole form's JSON. Form files and snapshots use a deterministic JSON writer (`gmforms_json_stringify`), because `json_stringify`'s key order varies between runs; that also keeps D6's "diffable" promise.
+- **Menus** became serializable: `MenuBar.menus` items store `onClick` as a handler name. The designer edits them in the inspector as a nested, resizable list.
+- **Files:** see section 15. The native dialogs are used, but with the sandbox on, paths outside the save area may be refused, and this hasn't been verified yet. "Save to the save area" and "Copy handler stubs" always work.
+- **Deferred to "Later":** live preview, multi-select/align tools, copy/paste, and editing context menus.
+
 ### Event stub generation
 - "Generate handlers" writes a `.gml` file containing a handler constructor with empty methods for every event name in the form. Existing method names are preserved; new ones appended.
 - The user adds/refreshes this script in their GameMaker project manually.
@@ -405,7 +412,7 @@ Status bar
 | **M3 Tier 1 controls** | Panel, Label, Button, CheckBox, Splitter, Viewport, Edit | Viewport pans/zooms and calls user draw code; Edit supports caret, selection, clipboard — **done, verified via headless `gm-cli` run + a manual visual check of Viewport rendering** |
 | **M4 PropertyGrid + undo** | PropertyGrid with inferred and metadata-driven editors; undo helper | **Sample: tiny tile editor** built by hand — tile palette, map viewport, property grid for selected tile, save/load JSON, undo — **done, verified via headless `gm-cli` run + a scripted screenshot check of the sample** |
 | **M5 Tier 2 controls** | TreeView, Tabs, ListBox, ComboBox + popup layer, MenuBar/popup menus, Toolbar, SpinEdit, Slider, ColorPicker, SpritePicker | Menus and dropdowns render above everything and close correctly on outside click/Escape — **done, verified via headless tests driving the real input path + scripted screenshots of the gallery and tile editor** |
-| **M6 Designer MVP** | Section 14 MVP features | The M4 tile editor's form can be recreated entirely in the designer and loads in the sample |
+| **M6 Designer MVP** | Section 14 MVP features | The M4 tile editor's form can be recreated entirely in the designer and loads in the sample — **done: `designer_script_tile_editor` rebuilds it with the designer's own operations; the sample loads `datafiles/tile_editor.gmform.json` and a test compares the two byte for byte** |
 | **M7 Release prep** | Samples (tile editor, dialogue editor, data table editor), docs, .yymps package, dark/light themes | A new user can import the package and run a sample in under 10 minutes following the README |
 
 **Key checkpoint:** M4. If a usable tile editor can be built by hand with the library, the core design is proven.

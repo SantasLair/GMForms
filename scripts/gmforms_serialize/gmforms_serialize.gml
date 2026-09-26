@@ -19,7 +19,96 @@ function gmforms_form_to_json(_form) {
         version: GMF_FORM_FORMAT_VERSION,
         root: gmforms_control_to_struct(_form),
     };
-    return json_stringify(_data, true);
+    return gmforms_json_stringify(_data, true);
+}
+
+/// @func gmforms_json_stringify(value, [pretty])
+/// @desc Deterministic JSON: the same data always gives the same text, so form files diff cleanly
+///       (json_stringify's key order isn't stable between runs). Struct keys are ordered: format,
+///       version, class, name, caption, text first; then alphabetical; items and children last.
+///       Whole numbers are written without a fraction ("700", not "700.0").
+/// @returns {String}
+function gmforms_json_stringify(_v, _pretty = true) {
+    return __gmforms_json_value(_v, _pretty, "");
+}
+
+function __gmforms_json_value(_v, _pretty, _ind) {
+    if (is_struct(_v)) {
+        var _keys = struct_get_names(_v);
+        array_sort(_keys, function(_a, _b) {
+            var _ra = __gmforms_json_key_rank(_a), _rb = __gmforms_json_key_rank(_b);
+            if (_ra != _rb) return _ra - _rb;
+            return (_a < _b) ? -1 : ((_a > _b) ? 1 : 0);
+        });
+        var _n = array_length(_keys);
+        if (_n == 0) return "{}";
+        var _in = _ind + "  ";
+        var _s = "{";
+        for (var _i = 0; _i < _n; _i++) {
+            if (_i > 0) _s += ",";
+            if (_pretty) _s += "\n" + _in;
+            _s += __gmforms_json_string(_keys[_i]) + ":" + __gmforms_json_value(_v[$ _keys[_i]], _pretty, _in);
+        }
+        return _s + (_pretty ? "\n" + _ind : "") + "}";
+    }
+    if (is_array(_v)) {
+        var _n = array_length(_v);
+        if (_n == 0) return "[]";
+        var _in = _ind + "  ";
+        var _s = "[";
+        for (var _i = 0; _i < _n; _i++) {
+            if (_i > 0) _s += ",";
+            if (_pretty) _s += "\n" + _in;
+            _s += __gmforms_json_value(_v[_i], _pretty, _in);
+        }
+        return _s + (_pretty ? "\n" + _ind : "") + "]";
+    }
+    if (is_string(_v)) return __gmforms_json_string(_v);
+    if (is_bool(_v)) return _v ? "true" : "false";
+    if (is_numeric(_v)) {
+        if (frac(_v) == 0 && abs(_v) < 1000000000000000) return string(int64(_v));
+        var _t = string_format(_v, 0, 10);
+        while (string_char_at(_t, string_length(_t)) == "0") _t = string_delete(_t, string_length(_t), 1);
+        if (string_char_at(_t, string_length(_t)) == ".") _t += "0";
+        return string_trim(_t);
+    }
+    return "null";   // undefined, methods, pointers...
+}
+
+function __gmforms_json_key_rank(_k) {
+    switch (_k) {
+        case "format":   return 0;
+        case "version":  return 1;
+        case "class":    return 2;
+        case "name":     return 3;
+        case "caption":  return 4;
+        case "text":     return 5;
+        case "items":    return 8;
+        case "children": return 9;
+    }
+    return 6;
+}
+
+function __gmforms_json_string(_s) {
+    var _out = "\"";
+    var _n = string_length(_s);
+    for (var _i = 1; _i <= _n; _i++) {
+        var _ch = string_char_at(_s, _i);
+        var _o = ord(_ch);
+        switch (_ch) {
+            case "\"": _out += "\\\""; break;
+            case "\\": _out += "\\\\"; break;
+            case "\n": _out += "\\n"; break;
+            case "\r": _out += "\\r"; break;
+            case "\t": _out += "\\t"; break;
+            default:
+                if (_o < 32) {
+                    var _hex = "0123456789abcdef";
+                    _out += "\\u00" + string_char_at(_hex, (_o div 16) + 1) + string_char_at(_hex, (_o mod 16) + 1);
+                } else _out += _ch;
+        }
+    }
+    return _out + "\"";
 }
 
 /// @func gmforms_save_form(filename, form)
@@ -27,11 +116,7 @@ function gmforms_form_to_json(_form) {
 /// @param {String} filename
 /// @param {Struct} form
 function gmforms_save_form(_filename, _form) {
-    var _json = gmforms_form_to_json(_form);
-    var _buf = buffer_create(string_byte_length(_json) + 1, buffer_grow, 1);
-    buffer_write(_buf, buffer_string, _json);
-    buffer_save(_buf, _filename);
-    buffer_delete(_buf);
+    gmforms_write_text_file(_filename, gmforms_form_to_json(_form));
 }
 
 /// @func gmforms_load_form(filename, [handlers])
@@ -45,13 +130,11 @@ function gmforms_load_form(_filename, _handlers = undefined) {
         gmforms_log("load_form: file not found: " + string(_filename));
         return undefined;
     }
-    var _buf = buffer_load(_filename);
-    if (_buf < 0) {
+    var _text = gmforms_read_text_file(_filename);
+    if (_text == undefined) {
         gmforms_log("load_form: could not read file: " + string(_filename));
         return undefined;
     }
-    var _text = buffer_read(_buf, buffer_string);
-    buffer_delete(_buf);
     return gmforms_load_form_json(_text, _handlers);
 }
 
@@ -60,6 +143,8 @@ function gmforms_load_form(_filename, _handlers = undefined) {
 ///       Event properties ("onClick": "btnSave_Click") are resolved against `handlers` with
 ///       struct_get(); a name that isn't found on `handlers` logs one warning per distinct
 ///       missing name and leaves the control's handler unset (the name is kept for re-saving).
+///       Without a handlers struct (design-time loads, e.g. the designer) names are kept silently.
+///       Menu-bar items ("menus") resolve their "onClick" names the same way.
 ///       An unknown `class` logs a warning and that node (and its children) is skipped.
 /// @param {String} json_text
 /// @param {Struct} [handlers]
@@ -119,6 +204,10 @@ function gmforms_control_to_struct(_ctrl) {
 
         var _field = _meta[$ "field"] ?? _key;
         var _val = __gmforms_geometry_value(_ctrl, _field);
+        if (_meta.type == "menus") {
+            if (is_array(_val) && array_length(_val) > 0) _out[$ _key] = gmforms_menus_to_json(_val);
+            continue;
+        }
         if (!gmforms_value_equals(_val, _meta.default_value)) {
             _out[$ _key] = _val;
         }
@@ -200,16 +289,11 @@ function __gmforms_build_control(_node, _handlers, _warned) {
 
         if (_meta.type == "event") {
             var _field = __gmforms_event_field(_key);
-            var _handler = (is_struct(_handlers) && struct_exists(_handlers, _raw)) ? struct_get(_handlers, _raw) : undefined;
-            if (_handler == undefined) {
-                if (!struct_exists(_warned, _raw)) {
-                    _warned[$ _raw] = true;
-                    gmforms_log("load_form: missing handler '" + string(_raw) + "' for " + _key);
-                }
-            } else {
-                _ctrl[$ _field] = _handler;
-            }
+            var _handler = __gmforms_resolve_handler(_handlers, _raw, _warned, _key);
+            if (_handler != undefined) _ctrl[$ _field] = _handler;
             _ctrl._ev_names[$ _field] = _raw; // keep the name even if unresolved, so re-saving doesn't lose it
+        } else if (_meta.type == "menus") {
+            _ctrl[$ _meta[$ "field"] ?? _key] = gmforms_menus_from_json(_raw, _handlers, _warned);
         } else {
             var _field = _meta[$ "field"] ?? _key;
             _ctrl[$ _field] = _raw;
@@ -227,6 +311,19 @@ function __gmforms_build_control(_node, _handlers, _warned) {
         }
     }
     return _ctrl;
+}
+
+/// Looks a handler name up on the handlers struct. A missing name logs one warning per load (per
+/// distinct name) — but only when a handlers struct was actually passed: loading with no handlers at
+/// all is the design-time case (the designer, tools) and stays silent.
+function __gmforms_resolve_handler(_handlers, _name, _warned, _what) {
+    if (!is_struct(_handlers)) return undefined;
+    if (struct_exists(_handlers, _name)) return struct_get(_handlers, _name);
+    if (!struct_exists(_warned, _name)) {
+        _warned[$ _name] = true;
+        gmforms_log("load_form: missing handler '" + string(_name) + "' for " + string(_what));
+    }
+    return undefined;
 }
 
 /// "onMouseDown" -> "on_mouse_down". Generic so a custom control's own "on*" published entries

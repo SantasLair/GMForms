@@ -40,6 +40,7 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
     readonly = false;           // true = the whole grid is read-only
     empty_text = "(nothing selected)";
     undo = undefined;           // optional GMF_UndoStack
+    on_dbl_click = undefined;   // (sender, key, owner) — a row was double-clicked
 
     target = undefined;         // bound struct (or array)
     meta = undefined;           // bound metadata array, or undefined = inferred
@@ -54,6 +55,8 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
     _edit_path = "";
     _edit_orig = "";
     _edit_drag = false;
+    _last_click_row = -1;
+    _last_click_time = -100000;
     _drag_divider = false;
     _drag_scroll = false;
     _drag_off = 0;
@@ -306,19 +309,38 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
         _clamp_scroll();
     };
 
-    static _add_rows = function(_owner, _m, _depth, _path) {
+    static _add_rows = function(_owner, _m, _depth, _path, _parent_row = undefined) {
         var _v = gmforms_get_value(_owner, _m.field);
-        var _exp = (_m.type == "struct" && is_struct(_v)) || (_m.type == "array" && is_array(_v));
-        array_push(_rows, { kind: "prop", label: _m.label, path: _path, depth: _depth,
-            owner: _owner, meta: _m, expandable: _exp });
+        var _exp = (_m.type == "struct" && is_struct(_v)) || (_m.type == "array" && is_array(_v) && array_length(_v) > 0);
+        var _label = _m.label;
+        // elements of an array with a label_field show it, e.g. "[0] File" for menu items
+        var _lf = (_parent_row != undefined) ? _parent_row.meta.label_field : undefined;
+        if (_lf != undefined && is_struct(_v)) _label += " " + string(_v[$ _lf] ?? "");
+        var _row = { kind: "prop", label: _label, path: _path, depth: _depth,
+            owner: _owner, meta: _m, expandable: _exp, parent_row: _parent_row };
+        array_push(_rows, _row);
         if (!_exp || _expanded[$ _path] != true) return;
-        var _sub = _entries_for(_v, _m.fields);
+        var _sub = _entries_for(_v, _m.fields, _m.element);
         var _n = array_length(_sub);
-        for (var _i = 0; _i < _n; _i++) _add_rows(_v, _sub[_i], _depth + 1, _path + "." + string(_sub[_i].name));
+        for (var _i = 0; _i < _n; _i++) _add_rows(_v, _sub[_i], _depth + 1, _path + "." + string(_sub[_i].name), _row);
     };
 
-    /// Resolved metadata for every field shown for owner (explicit list, or inferred).
-    static _entries_for = function(_owner, _list) {
+    /// Resolved metadata for every field shown for owner (explicit list, or inferred). For arrays,
+    /// `element` (a metadata entry without a name) describes every item.
+    static _entries_for = function(_owner, _list, _element = undefined) {
+        if (is_array(_owner) && is_struct(_element)) {
+            var _out_el = [];
+            var _en = array_length(_owner);
+            var _keys = struct_get_names(_element);
+            for (var _i = 0; _i < _en; _i++) {
+                var _e = {};
+                for (var _k = 0; _k < array_length(_keys); _k++) _e[$ _keys[_k]] = _element[$ _keys[_k]];
+                _e.name = _i;
+                _e.label = "[" + string(_i) + "]";
+                array_push(_out_el, _resolve(_e, _owner));
+            }
+            return _out_el;
+        }
         var _out = [];
         if (is_array(_list)) {
             var _n = array_length(_list);
@@ -371,6 +393,10 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
             step: _e[$ "step"] ?? (_rstep ?? 1),
             fields: _e[$ "fields"],
             set_fn: _e[$ "set_fn"],
+            element: _e[$ "element"],           // arrays: metadata for every item
+            resizable: (_e[$ "resizable"] ?? false) == true,   // arrays: + / x buttons add and remove items
+            new_element: _e[$ "new_element"],   // arrays: function() returning a new item
+            label_field: _e[$ "label_field"],   // arrays of structs: field shown next to "[i]"
             root: _root,
         };
     };
@@ -626,12 +652,53 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
         return _row.kind == "prop" && _is_number(_row.meta.type) && !_is_readonly(_row);
     };
 
+    /// "add" for a resizable array row, "remove" for an item of one, else "".
+    static _row_button = function(_row) {
+        if (_row.kind != "prop" || readonly) return "";
+        if (_row.meta.type == "array" && _row.meta.resizable && !_row.meta.readonly) return "add";
+        var _p = _row.parent_row;
+        if (_p != undefined && _p.meta.resizable && !_p.meta.readonly) return "remove";
+        return "";
+    };
+
+    /// Local x where the value column's content ends (before the +/x button, if any).
+    static _value_right = function(_row) {
+        return name_width + _value_w() - ((_row_button(_row) != "") ? _spin_w : 0);
+    };
+
+    /// @func add_element(index)
+    /// @desc On a resizable array row: appends meta.new_element() (or a copy of the last item) as one undo step.
+    static add_element = function(_i) {
+        var _row = get_row(_i);
+        if (_row == undefined || _row_button(_row) != "add") return false;
+        var _old = _row_value(_row);
+        var _arr = is_array(_old) ? _old : [];
+        var _el;
+        if (is_callable(_row.meta.new_element)) _el = _row.meta.new_element();
+        else if (array_length(_arr) > 0) _el = json_parse(json_stringify({ v: _arr[array_length(_arr) - 1] })).v;
+        else _el = "";
+        var _ok = _commit(_row, array_concat(_arr, [_el]));
+        if (_ok) set_expanded(_row.path, true);
+        return _ok;
+    };
+
+    /// @func remove_element(index)
+    /// @desc On an item of a resizable array: removes it from the array as one undo step.
+    static remove_element = function(_i) {
+        var _row = get_row(_i);
+        if (_row == undefined || _row_button(_row) != "remove") return false;
+        var _parent = _row.parent_row;
+        var _arr = array_concat([], _row.owner);
+        array_delete(_arr, _row.meta.field, 1);
+        return _commit(_parent, _arr);
+    };
+
     /// Local rect of the in-place editor, or undefined when not editing.
     static _editor_rect = function() {
         if (!_editing) return undefined;
         var _i = find_row(_edit_path);
         if (_i < 0) return undefined;
-        var _w = _value_w() - 1;
+        var _w = _value_right(_rows[_i]) - name_width - 1;
         if (_has_spin(_rows[_i])) _w -= _spin_w * 2;
         return { x: name_width + 1, y: _i * row_height - _scroll_y, w: max(0, _w), h: row_height };
     };
@@ -662,6 +729,19 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
     static mouse_down = function(_x, _y, _btn) {
         if (is_callable(on_mouse_down)) on_mouse_down(self, _x, _y, _btn);
         _ensure_rows();
+
+        // double-click on a row -> on_dbl_click(sender, key, owner) (the designer's "default handler name")
+        var _di = (_btn == mb_left && !(_sb_visible() && _x >= width - _sb_w)) ? _row_at(_y) : -1;
+        if (_di >= 0 && _di == _last_click_row && current_time - _last_click_time < 400 && is_callable(on_dbl_click)
+            && _rows[_di].kind == "prop") {
+            _last_click_time = -100000;
+            cancel_edit();
+            select(_di);
+            on_dbl_click(self, _rows[_di].meta.name, _rows[_di].owner);
+            return;
+        }
+        _last_click_row = _di;
+        _last_click_time = current_time;
 
         if (_editing) {
             var _er = _editor_rect();
@@ -699,6 +779,11 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
             if (_btn == mb_left && (_row.kind == "category" || _row.expandable)) toggle_expand(_i);
             return;
         }
+        var _rb = _row_button(_row);
+        if (_rb != "" && _btn == mb_left && _x >= _value_right(_row)) {
+            if (_rb == "add") add_element(_i); else remove_element(_i);
+            return;
+        }
         switch (_row.meta.type) {
             case "bool":
                 if (_btn == mb_left) _commit(_row, !(_row_value(_row) == true));
@@ -723,7 +808,7 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
             case "int":
             case "real":
                 if (_btn != mb_left) break;
-                var _right = name_width + _value_w();
+                var _right = _value_right(_row);
                 if (_x >= _right - _spin_w * 2) _step_value(_row, (_x >= _right - _spin_w) ? 1 : -1);
                 else begin_edit(_i);
                 break;
@@ -915,6 +1000,24 @@ function GMF_PropertyGrid() : GMF_Control() constructor {
         var _m = _row.meta;
         var _v = _row_value(_row);
         var _pad = 4;
+        var _rb = _row_button(_row);
+        if (_rb != "") {
+            // + (add item) / x (remove item) button at the right of the value column
+            _w -= _spin_w;
+            var _bx = _x + _w;
+            gmforms_draw_rect(_bx, _y + 1, _spin_w, _h - 2, _th.button);
+            gmforms_draw_frame(_bx, _y + 1, _spin_w, _h - 2, _th.button_border);
+            var _mx = _bx + floor(_spin_w * 0.5);
+            var _my = _y + floor(_h * 0.5);
+            draw_set_colour(_th.text);
+            if (_rb == "add") {
+                gmforms_draw_rect(_mx - 3, _my, 7, 1, _th.text);
+                gmforms_draw_rect(_mx, _my - 3, 1, 7, _th.text);
+            } else {
+                draw_line(_mx - 3, _my - 3, _mx + 3, _my + 3);
+                draw_line(_mx + 3, _my - 3, _mx - 3, _my + 3);
+            }
+        }
         switch (_m.type) {
             case "bool":
                 var _b = 12;
@@ -1030,6 +1133,15 @@ function gmforms_control_grid_meta(_ctrl) {
                 break;
         }
         if (struct_exists(_p, "values")) _e.values = _p.values;
+        if (_p.type == "menus") {
+            // menu bar items: an editable list (+ / x), each item a struct with a nested submenu list
+            var _ml = gmforms_menu_list_meta(_p.name);
+            _e.type = "array";
+            _e.resizable = true;
+            _e.label_field = _ml.label_field;
+            _e.element = _ml.element;
+            _e.new_element = _ml.new_element;
+        }
         array_push(_out, _e);
     }
     return _out;

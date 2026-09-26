@@ -346,6 +346,25 @@ function GMF_Form() : GMF_Control() constructor {
         layout();
     };
 
+    /// @func simulate_drag(x1, y1, x2, y2, [button])
+    /// @desc Press at (x1, y1), move to (x2, y2) in a few steps, release there — through the real input code.
+    static simulate_drag = function(_x1, _y1, _x2, _y2, _btn = mb_left) {
+        layout();
+        _update_hover(_x1, _y1);
+        _mouse_move_to(_x1, _y1);
+        _mouse_press(_btn, _x1, _y1);
+        for (var _k = 1; _k <= 4; _k++) {
+            layout();
+            var _mx = lerp(_x1, _x2, _k / 4);
+            var _my = lerp(_y1, _y2, _k / 4);
+            _update_hover(_mx, _my);
+            _mouse_move_to(_mx, _my);
+        }
+        layout();
+        _mouse_release(_btn, _x2, _y2);
+        layout();
+    };
+
     /// @func simulate_move(gui_x, gui_y)
     /// @desc Moves the (virtual) mouse through the same code as real input.
     static simulate_move = function(_mx, _my) {

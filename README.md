@@ -2,11 +2,11 @@
 
 A Delphi-style RAD form system for GameMaker. See `gamemaker-form-designer-plan.md` for the full plan.
 
-**Status: M1 (runtime core), M2 (serialization), M3 (Tier 1 controls) M4 (PropertyGrid + undo, with a tile editor sample) and M5 (Tier 2 controls: menus, popups, lists, tabs, toolbar, value editors) implemented.** Built for GameMaker IDE 2026.0.
+**Status: M1–M6 implemented:** runtime core, serialization, Tier 1 and Tier 2 controls, PropertyGrid + undo with a tile editor sample, and the visual **form designer** (built with the library itself). Built for GameMaker IDE 2026.0.
 
 ## Run the demos
 
-Open `GMForms.yyp` in GameMaker and run it (F5). The first room is the **M4 tile editor sample** (`rm_demo_tiles`), built by hand in `scripts/demo_tiles`:
+Open `GMForms.yyp` in GameMaker and run it (F5). The first room is the **tile editor sample** (`rm_demo_tiles`). Its UI was made with the designer and lives in `datafiles/tile_editor.gmform.json`; `scripts/demo_tiles` holds the behaviour, bound to the form's events by name:
 
 1. **Paint:** pick a tile in the left palette, then left-drag on the map. Right-drag erases. Each stroke is one undo step.
 2. **Select:** switch to the *Select* tool and click a cell to edit it in the property grid (tile, tag, spawn point). Right-click a cell to pick up its tile.
@@ -15,7 +15,7 @@ Open `GMForms.yyp` in GameMaker and run it (F5). The first room is the **M4 tile
 5. **Save/Open:** use the toolbar or Ctrl+S / Ctrl+O. This writes `tilemap.json` to the save area (`%LOCALAPPDATA%\GMForms` on Windows).
 6. Pan with middle-drag or Space+drag, and zoom with the wheel. The splitters resize the palette and the inspector.
 
-**File > Other demos** opens the **M5 controls gallery** (menus with submenus, a tree context menu, ListBox, TreeView, ComboBox, SpinEdit, Slider, ColorPicker, SpritePicker, and the property grid's popup editors on three tabs, with a dark/light theme switch under View) and the **M1 layout demo**. In the M1 demo, Resize the window there to watch Align/Anchors reflow. Tab/Shift+Tab cycles focus, and Space/Enter clicks the focused button.
+**File > Other demos** opens the **form designer**, the **M5 controls gallery** (menus with submenus, a tree context menu, ListBox, TreeView, ComboBox, SpinEdit, Slider, ColorPicker, SpritePicker, and the property grid's popup editors on three tabs, with a dark/light theme switch under View) and the **M1 layout demo**. In the M1 demo, Resize the window there to watch Align/Anchors reflow. Tab/Shift+Tab cycles focus, and Space/Enter clicks the focused button.
 
 ## What's in M1–M4
 
@@ -33,10 +33,11 @@ Open `GMForms.yyp` in GameMaker and run it (F5). The first room is the **M4 tile
 | `gmforms_controls_menus` | `GMF_MenuBar`, `GMF_PopupMenu` (context menus, submenus), menu item helpers and shortcuts |
 | `gmforms_controls_containers` | `GMF_TabControl` / `GMF_TabSheet`, `GMF_Toolbar` / `GMF_ToolSeparator` |
 | `gmforms_controls_values` | `GMF_SpinEdit`, `GMF_Slider`, `GMF_ColorPicker` |
+| `designer_*` (folder Designer) | The form designer: `GMF_DesignCanvas`, `DesignerApp`, handler stub generation, scripted sessions |
 | `gmforms_undo` | `GMF_UndoStack`: command-based undo/redo with groups, `set_value` and JSON-snapshot steps |
 | `gmforms_host` + `obj_gmforms_host` | Host object: tracks window size, resizes `application_surface` and the GUI layer to it (1:1, no letterboxing), resizes the form, forwards Step / Draw GUI |
 | `gmforms_serialize` | Registry-driven JSON save/load: `gmforms_form_to_json`, `gmforms_save_form`, `gmforms_load_form` / `gmforms_load_form_json`, event-name binding, `gmforms_value_equals` |
-| `gmforms_tests` | 433 headless checks of Align, Anchors, reflow, hit testing, focus/Tab, keyboard clicks, M2 serialization round-trips, and M3 controls (CheckBox toggling, Splitter drag-resize, Viewport camera math, Edit text editing), plus M4 (undo stack, PropertyGrid editing/metadata/undo integration, and the tile editor's document model), plus M5 (popup layer, menus, shortcuts, context menus, and every Tier 2 control, driven through the form's real input path). They run in the first room when `GMF_RUN_TESTS` is true and print `[GMForms tests] N passed, M failed` to the Output window |
+| `gmforms_tests` | 500 headless checks of Align, Anchors, reflow, hit testing, focus/Tab, keyboard clicks, M2 serialization round-trips, and M3 controls (CheckBox toggling, Splitter drag-resize, Viewport camera math, Edit text editing), plus M4 (undo stack, PropertyGrid editing/metadata/undo integration, and the tile editor's document model), plus M5 (popup layer, menus, shortcuts, context menus, and every Tier 2 control, driven through the form's real input path), plus M6 (menu serialization, grid list editing, handler stub generation, the designer driven through real mouse/keyboard input, and the tile editor's designed form matching what the designer produces). They run in the first room when `GMF_RUN_TESTS` is true and print `[GMForms tests] N passed, M failed` to the Output window |
 
 ## Minimal usage
 
@@ -79,6 +80,34 @@ _ed.on_change = function(_sender, _text) { show_debug_message("now: " + _text); 
 ```
 Supports caret movement, Shift-extend selection, Ctrl+A/C/X/V, mouse click/drag-select, horizontal scroll, and `password: true` for masked input.
 
+## The form designer (M6)
+
+Open it from the tile editor (**File > Other demos > Form designer**) or run `rm_designer`.
+
+- **Palette** (top left): pick a class, then click on the form to place it at its default size, or drag out its rectangle. Shift keeps the class armed; Esc cancels.
+- **Canvas:**
+  - Click to select; clicking a tab switches the page.
+  - Drag a control to move it (snapped to the grid). Drop it onto a panel, tab page or toolbar to move it inside.
+  - Drag the handles to resize. Aligned controls resize only along their free edge, and the form resizes from its right/bottom edge, which changes its design size.
+  - Arrows nudge the selection (Shift = one grid step); Delete deletes it; Esc selects its parent.
+  - Middle-drag or the wheel scrolls the view. Right-click for a context menu (delete, bring to front, send to back, add a tab page).
+- **Structure** (bottom left) mirrors the control tree. Select there too, which is the way to reach invisible controls.
+- **Properties** edits the selected control's published properties, including a MenuBar's menus (+/× buttons, submenus, handler names). **Events** lists its events: type a handler name, or double-click for `<control>_<Event>` (e.g. `btnSave_Click`).
+- **Undo/redo** (Ctrl+Z / Ctrl+Y) covers every edit.
+- **File:**
+  - New, Open, Save and Save as use the native file dialogs. With the Windows file system sandbox on, GameMaker may refuse paths outside the save area; the status bar says so. "Save to the save area" always works.
+  - **Generate handlers** writes `<form>_Handlers.gml` with an empty method for every handler name used, event and menu items alike. Regenerating keeps your code and only appends missing handlers. **Copy handler stubs** puts the same code on the clipboard.
+
+Using a designed form:
+```gml
+function frmMain_Handlers() constructor {           // generated, then filled in
+    btnSave_Click = function(_sender) { save_map(); };
+}
+var _form = gmforms_load_form("frmMain.gmform.json", new frmMain_Handlers());
+gmforms_host_create(_form);
+```
+Form files are deterministic, human-readable JSON (stable key order, no trailing NUL), so they diff cleanly in git.
+
 ## Menus, popups and Tier 2 controls (M5)
 
 ```gml
@@ -101,6 +130,7 @@ var _tabs = form.add(gmforms_create(GMF_TabControl, { align: "client" }));
 var _page = _tabs.add_page("General");                      // add controls to the page
 ```
 - **Popups** (menus, dropdown lists, the colour popup) draw above everything. A click outside closes them (and does nothing else); Escape closes the topmost one. `form.show_popup(control, x, y, owner)` puts any control of your own in the popup layer.
+- **Menu bars are saved in form files.** Each item's `onClick` is stored as a handler name (`item.on_click_name`) and bound on load like any event. Context menus (`popup_menu`) are still code-only.
 - **Shortcuts** in menu items work from anywhere in the form: `"Ctrl+S"`, `"Ctrl+Shift+Z"`, `"F5"`, `"Ctrl+Delete"`. Add `alt_shortcut` for a second, undisplayed binding.
 - **ListBox** / **TreeView**: `on_change(sender, index | node)` and `on_activate` (double-click / Enter). Tree nodes are `{ text, nodes, expanded, data }`; use `add_node(parent, text, [data])`, `remove_node`, `select_node` and `expand_all`.
 - **ComboBox** / **SpritePicker**: `on_change(sender, index | sprite)`. SpritePicker lists the project's sprites, or your own `sprites` + `labels`.
@@ -176,7 +206,7 @@ gmforms_host_create(_form);
 
 ## Visual check
 
-For the controls gallery, set `DEMO_M5_CAPTURE` to `true` (in `demo_m5`). The first room then jumps to the gallery, which opens each menu, dropdown and popup in turn and saves `m5_*.png`. For the tile editor, set `DEMO_TILES_CAPTURE` to `true` (in `demo_tiles`). It then plays a short scripted session (cell edit, map properties, painting, a tile type) and saves `m4_*.png` to the save area before quitting.
+For the designer, set `DESIGNER_CAPTURE` to `true` (in `designer_scripts`); it saves `designer_*.png`. For the controls gallery, set `DEMO_M5_CAPTURE` to `true` (in `demo_m5`). The first room then jumps to the gallery, which opens each menu, dropdown and popup in turn and saves `m5_*.png`. For the tile editor, set `DEMO_TILES_CAPTURE` to `true` (in `demo_tiles`). It then plays a short scripted session (cell edit, map properties, painting, a tile type) and saves `m4_*.png` to the save area before quitting.
 
 
 Set `GMF_DEMO_CAPTURE` to `true` (in `demo_m1`). The demo then saves `m1_*.png` screenshots to the save area (`%LOCALAPPDATA%\GMForms`) at 1024×700, 1200×760 (palette hidden, focus moved) and 760×520 (top-right button disabled), and then quits.

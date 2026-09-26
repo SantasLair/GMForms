@@ -10,7 +10,8 @@
     {"name":"gmforms_core","order":6,"path":"scripts/gmforms_core/gmforms_core.yy",},
     {"name":"gmforms_form","order":7,"path":"scripts/gmforms_form/gmforms_form.yy",},
     {"name":"gmforms_host","order":8,"path":"scripts/gmforms_host/gmforms_host.yy",},
-    {"name":"gmforms_tests","order":9,"path":"scripts/gmforms_tests/gmforms_tests.yy",},
-    {"name":"gmforms_theme","order":10,"path":"scripts/gmforms_theme/gmforms_theme.yy",},
+    {"name":"gmforms_serialize","order":9,"path":"scripts/gmforms_serialize/gmforms_serialize.yy",},
+    {"name":"gmforms_tests","order":10,"path":"scripts/gmforms_tests/gmforms_tests.yy",},
+    {"name":"gmforms_theme","order":11,"path":"scripts/gmforms_theme/gmforms_theme.yy",},
   ],
 }

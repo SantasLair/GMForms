@@ -4,7 +4,7 @@
 
 Working name: **GMForms** (placeholder — rename freely)
 
-> **Progress (2026-09-25):** M1 is done and tested in GameMaker LTS 2026: the project runs, 130 headless checks pass, and screenshots were checked at 3 window sizes. See `README.md`. Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi). Next up: **M2 Serialization**.
+> **Progress (2026-09-25):** M1 is done and tested in GameMaker LTS 2026: the project runs, screenshots were checked at 3 window sizes, and the headless suite passes. M2 (registry, published property metadata, JSON load/save, event binding) is now implemented and verified: `gm-cli` (see CLAUDE.md) built and ran the project headlessly and confirmed `[GMForms tests] 144 passed, 0 failed`, including every M2 warning path. See `README.md` and CLAUDE.md's "M2 notes". Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi). Next up: **M3 Tier 1 controls**.
 
 ---
 
@@ -379,7 +379,7 @@ Status bar
 | Milestone | Scope | Done when |
 |---|---|---|
 | **M1 Runtime core** | Control base, tree, layout engine (Align + Anchors), host object, resize handling, theme basics, input manager (hover, click, capture, focus, tab order) | A hand-coded form with top/left/client panels and anchored buttons reflows correctly on window resize; Tab cycles focus |
-| **M2 Serialization** | Registry, published metadata, JSON load/save, event binding (both styles) | A form round-trips JSON → tree → JSON with no diffs; missing handlers produce warnings |
+| **M2 Serialization** | Registry, published metadata, JSON load/save, event binding (both styles) | A form round-trips JSON → tree → JSON with no diffs; missing handlers produce warnings — **done, verified via headless `gm-cli` run** |
 | **M3 Tier 1 controls** | Panel, Label, Button, CheckBox, Splitter, Viewport, Edit | Viewport pans/zooms and calls user draw code; Edit supports caret, selection, clipboard |
 | **M4 PropertyGrid + undo** | PropertyGrid with inferred and metadata-driven editors; undo helper | **Sample: tiny tile editor** built by hand — tile palette, map viewport, property grid for selected tile, save/load JSON, undo |
 | **M5 Tier 2 controls** | TreeView, Tabs, ListBox, ComboBox + popup layer, MenuBar/popup menus, Toolbar, SpinEdit, Slider, ColorPicker, SpritePicker | Menus and dropdowns render above everything and close correctly on outside click/Escape |

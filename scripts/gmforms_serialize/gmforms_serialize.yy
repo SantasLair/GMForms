@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"gmforms_serialize",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"gmforms_serialize",
+  "parent":{
+    "name":"GMForms",
+    "path":"folders/GMForms.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

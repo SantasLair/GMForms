@@ -131,6 +131,60 @@ function gmforms_run_tests() {
     _b.key_up(vk_space);
     _t.eq("disabled button ignores Space", _counter.clicks, 1);
 
+    // --- M2: serialization ---------------------------------------------------------------
+
+    // round trip: code-built tree -> JSON -> tree -> JSON must be byte-identical
+    var _rf = gmforms_create(GMF_Form, { name: "frmTest", width: 500, height: 300, caption: "Test" });
+    var _bar = _rf.add(gmforms_create(GMF_Panel, { name: "pnlBar", align: "top", height: 36 }));
+    var _btn = _bar.add(gmforms_create(GMF_Button, { name: "btnOk", caption: "OK", left: 6, top: 4 }));
+    _btn._ev_names[$ "on_click"] = "btnOk_Click";
+    _rf.add(gmforms_create(GMF_Label, { name: "lblInfo", caption: "Hi", left: 10, top: 50 }));
+
+    var _json1 = gmforms_form_to_json(_rf);
+    var _tree2 = gmforms_load_form_json(_json1, { btnOk_Click: function(_s) {} });
+    var _json2 = gmforms_form_to_json(_tree2);
+    _t.eq("serialize round trip is stable", _json1, _json2);
+    _t.eq("event resolved against handlers", is_callable(_tree2.find("btnOk").on_click), true);
+
+    // missing handler: warns (see log), leaves the field unset, but keeps the name for re-saving
+    var _tree3 = gmforms_load_form_json(_json1, {});
+    _t.eq("missing handler leaves on_click unresolved", _tree3.find("btnOk").on_click, undefined);
+    _t.eq("missing handler name still round-trips", gmforms_form_to_json(_tree3), _json1);
+
+    // defaults are omitted
+    var _plain = gmforms_create(GMF_Button, { name: "btnPlain" });
+    var _ps = gmforms_control_to_struct(_plain);
+    _t.eq("default caption omitted", struct_exists(_ps, "caption"), false);
+    _t.eq("default width omitted", struct_exists(_ps, "width"), false);
+    _t.eq("class always present", _ps[$ "class"], "Button");
+    _t.eq("name present when set", _ps[$ "name"], "btnPlain");
+
+    // anchored controls serialize their design rect, not the current (drifted) one
+    var _pf = gmforms_create(GMF_Form, { width: 400, height: 300 });
+    var _pp = _pf.add(gmforms_create(GMF_Panel, { align: "client" }));
+    var _ac = _pp.add(gmforms_create(GMF_Control, { name: "acRight", left: 300, top: 10, width: 100, height: 20, anchors: ["right", "top"] }));
+    _pf.layout();
+    _pf.set_bounds(0, 0, 800, 300);
+    _pf.layout();
+    _t.eq("anchored control drifted before serializing", _ac.left, 700);
+    _t.eq("serialize keeps design left, not drifted left", gmforms_control_to_struct(_ac)[$ "left"], 300);
+
+    // unknown class: warns, is skipped, siblings still load
+    var _bad_json = json_stringify({
+        format: "gmforms", version: 1,
+        root: { class: "Form", children: [
+            { class: "Frobnicator", name: "whoops" },
+            { class: "Label", name: "lblOk" },
+        ] },
+    });
+    var _bt = gmforms_load_form_json(_bad_json);
+    _t.eq("unknown class child skipped, root still loads", array_length(_bt.children), 1);
+    _t.eq("sibling after unknown class still loads", _bt.children[0].name, "lblOk");
+
+    // unsupported version / wrong format are rejected, not crashed on
+    _t.eq("unsupported version rejected", gmforms_load_form_json(json_stringify({ format: "gmforms", version: 2, root: { class: "Form" } })), undefined);
+    _t.eq("wrong format rejected", gmforms_load_form_json(json_stringify({ format: "nope", version: 1, root: {} })), undefined);
+
     var _ok = (_t.failed == 0);
     show_debug_message("[GMForms tests] " + string(_t.passed) + " passed, " + string(_t.failed) + " failed");
     return _ok;

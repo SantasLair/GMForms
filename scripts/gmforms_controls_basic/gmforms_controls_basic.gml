@@ -10,6 +10,13 @@ function GMF_Panel() : GMF_Control() constructor {
     transparent = false;        // true = no background fill
     border = true;
 
+    static published = array_concat(gmforms_base_published(), [
+        { name: "caption",     type: "string", default_value: "" },
+        { name: "color",       type: "color",  default_value: undefined },
+        { name: "transparent", type: "bool",   default_value: false },
+        { name: "border",      type: "bool",   default_value: true },
+    ]);
+
     static draw = function() {
         var _th = gmforms_theme();
         if (!transparent) gmforms_draw_rect(_sx, _sy, width, height, color ?? _th.panel);
@@ -32,6 +39,12 @@ function GMF_Button() : GMF_Control() constructor {
     height = 28;
     tab_stop = true;
     _key_down = false;          // Space/Enter held while focused (pressed look)
+
+    static published = array_concat(gmforms_base_published(), [
+        { name: "caption", type: "string", default_value: "Button" },
+        { name: "width",   type: "int",    default_value: 80 },
+        { name: "height",  type: "int",    default_value: 28 },
+    ]);
 
     static draw = function() {
         var _th = gmforms_theme();
@@ -86,6 +99,15 @@ function GMF_Label() : GMF_Control() constructor {
     text_align = "left";
     text_valign = "middle";
     color = undefined;          // text colour; undefined = theme.text
+
+    static published = array_concat(gmforms_base_published(), [
+        { name: "caption",     type: "string", default_value: "Label" },
+        { name: "width",       type: "int",    default_value: 120 },
+        { name: "height",      type: "int",    default_value: 22 },
+        { name: "text_align",  type: "enum",   values: ["left", "center", "right"], default_value: "left" },
+        { name: "text_valign", type: "enum",   values: ["top", "middle", "bottom"], default_value: "middle" },
+        { name: "color",       type: "color",  default_value: undefined },
+    ]);
 
     static draw = function() {
         var _th = gmforms_theme();

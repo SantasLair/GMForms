@@ -10,6 +10,45 @@
 ///   invalidate layout and, for set_bounds()/set(), re-capture the anchor distances. Assigning
 ///   left/top/width/height directly on an anchored control is overwritten by the next layout.
 
+/// @func gmforms_base_published()
+/// @desc Fresh copy of GMF_Control's published property list. Subclasses build their own list with
+///       array_concat(gmforms_base_published(), [ ...own entries... ]); gmforms_serialize dedupes by
+///       name, so an entry placed after a base one (e.g. to change a default) wins.
+function gmforms_base_published() {
+    return [
+        { name: "left",   type: "int",  default_value: 0 },
+        { name: "top",    type: "int",  default_value: 0 },
+        { name: "width",  type: "int",  default_value: 100 },
+        { name: "height", type: "int",  default_value: 30 },
+        { name: "align",  type: "enum", values: ["none", "top", "bottom", "left", "right", "client"], default_value: "none" },
+        { name: "anchors", type: "anchors", default_value: ["left", "top"] },
+        { name: "visible",    type: "bool", default_value: true },
+        { name: "enabled",    type: "bool", default_value: true },
+        { name: "tab_stop",   type: "bool", default_value: false },
+        { name: "tab_order",  type: "int",  default_value: -1 },
+        { name: "hint",       type: "string", default_value: "" },
+        { name: "min_width",  type: "int", default_value: 0 },
+        { name: "min_height", type: "int", default_value: 0 },
+        { name: "max_width",  type: "int", default_value: 0 },
+        { name: "max_height", type: "int", default_value: 0 },
+        { name: "margin",  type: "struct", default_value: { l: 0, t: 0, r: 0, b: 0 } },
+        { name: "padding", type: "struct", default_value: { l: 0, t: 0, r: 0, b: 0 } },
+        { name: "onClick",      type: "event" },
+        { name: "onMouseDown",  type: "event" },
+        { name: "onMouseUp",    type: "event" },
+        { name: "onMouseMove",  type: "event" },
+        { name: "onMouseEnter", type: "event" },
+        { name: "onMouseLeave", type: "event" },
+        { name: "onMouseWheel", type: "event" },
+        { name: "onKeyDown",    type: "event" },
+        { name: "onKeyUp",      type: "event" },
+        { name: "onFocus",      type: "event" },
+        { name: "onBlur",       type: "event" },
+        { name: "onChange",     type: "event" },
+        { name: "onResize",     type: "event" },
+    ];
+}
+
 /// @func GMF_Control()
 /// @desc Base control. Subclasses override draw(), draw_overlay() and the input hooks.
 function GMF_Control() constructor {
@@ -65,6 +104,12 @@ function GMF_Control() constructor {
     _layout_dirty = true;
     _anchor_captured = false;
     _anc = { l: 0, t: 0, w: 0, h: 0, pw: 0, ph: 0 };
+    _ev_names = {};                     // field name (e.g. "on_click") -> handler name last bound by the loader
+
+    // Published property metadata (plan section 7 / M2). Subclasses build their own list with
+    // array_concat(gmforms_base_published(), [...]); gmforms_serialize dedupes by name, so a later
+    // entry (e.g. a subclass changing a default) overrides an earlier one.
+    static published = gmforms_base_published();
 
     // -----------------------------------------------------------------------
     // Tree

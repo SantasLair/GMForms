@@ -10,14 +10,29 @@ function gmforms_init() {
     if (variable_global_exists("gmforms") && is_struct(global.gmforms)) return global.gmforms;
     global.gmforms = {
         theme: undefined,
-        registry: {},          // class name -> constructor (used from M2 on)
+        registry: {},          // class name -> constructor, keyed by class_name (e.g. "Button")
         scissor_stack: [],
         scissor_scale_x: 1,
         scissor_scale_y: 1,
         log_enabled: true,
     };
     global.gmforms.theme = gmforms_theme_dark();
+
+    // Built-in controls. User controls register themselves with gmforms_register().
+    gmforms_register("Form", GMF_Form);
+    gmforms_register("Panel", GMF_Panel);
+    gmforms_register("Button", GMF_Button);
+    gmforms_register("Label", GMF_Label);
+
     return global.gmforms;
+}
+
+/// @func gmforms_register(class_name, ctor)
+/// @desc Adds (or replaces) a class in the registry so the loader can instantiate it by name.
+/// @param {String} class_name Must match the value the constructor sets for `class_name`.
+/// @param {Function} ctor
+function gmforms_register(_class_name, _ctor) {
+    gmforms_init().registry[$ _class_name] = _ctor;
 }
 
 /// @func gmforms_log(message)

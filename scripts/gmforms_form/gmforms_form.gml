@@ -23,6 +23,13 @@ function GMF_Form() : GMF_Control() constructor {
     _last_mx = -100000;
     _last_my = -100000;
 
+    static published = array_concat(gmforms_base_published(), [
+        { name: "width",   type: "int",    default_value: 640 },
+        { name: "height",  type: "int",    default_value: 480 },
+        { name: "caption", type: "string", default_value: "Form" },
+        { name: "color",   type: "color",  default_value: undefined },
+    ]);
+
     // keys forwarded to the focused control (Tab is handled by the form)
     static _nav_keys = [
         vk_enter, vk_space, vk_escape, vk_backspace, vk_delete,

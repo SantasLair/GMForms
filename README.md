@@ -2,7 +2,7 @@
 
 A Delphi-style RAD form system for GameMaker. See `gamemaker-form-designer-plan.md` for the full plan.
 
-**Status: M1 (runtime core) implemented.** Built for GameMaker IDE 2026.0.
+**Status: M1 (runtime core) and M2 (serialization) implemented.** Built for GameMaker IDE 2026.0.
 
 ## Run the demo
 
@@ -12,7 +12,7 @@ A Delphi-style RAD form system for GameMaker. See `gamemaker-form-designer-plan.
 4. Press **Tab** or **Shift+Tab** to cycle focus, and **Space** or **Enter** to click the focused button.
 5. Use the toolbar's *Toggle palette*, *Toggle inspector* and *Disable top-right* buttons to test reflow when visibility changes, and to test disabled state.
 
-## What's in M1
+## What's in M1 + M2
 
 | Script | Contents |
 |---|---|
@@ -22,7 +22,8 @@ A Delphi-style RAD form system for GameMaker. See `gamemaker-form-designer-plan.
 | `gmforms_form` | `GMF_Form`: root control and input manager (hover, capture, click, wheel bubbling, focus, Tab order, key routing), `update()` / `render()` |
 | `gmforms_controls_basic` | `GMF_Panel`, `GMF_Button`, `GMF_Label` |
 | `gmforms_host` + `obj_gmforms_host` | Host object: tracks window size, resizes `application_surface` and the GUI layer to it (1:1, no letterboxing), resizes the form, forwards Step / Draw GUI |
-| `gmforms_tests` | 130 headless checks of Align, Anchors, reflow, hit testing, focus/Tab and keyboard clicks. They run at demo start when `GMF_RUN_TESTS` is true and print `[GMForms tests] N passed, M failed` to the Output window |
+| `gmforms_serialize` | Registry-driven JSON save/load: `gmforms_form_to_json`, `gmforms_save_form`, `gmforms_load_form` / `gmforms_load_form_json`, event-name binding, `gmforms_value_equals` |
+| `gmforms_tests` | 144 headless checks of Align, Anchors, reflow, hit testing, focus/Tab, keyboard clicks and M2 serialization round-trips. They run at demo start when `GMF_RUN_TESTS` is true and print `[GMForms tests] N passed, M failed` to the Output window |
 
 ## Minimal usage
 
@@ -43,6 +44,27 @@ gmforms_host_create(form);
 - `left`/`top` are relative to the parent's top-left corner. Padding affects aligned children only.
 - To move or resize a control from code, use `set_bounds()` or `set({...})`. They re-capture anchors. Assigning `left`/`width` directly on an anchored control is overwritten by the next layout.
 - `min_width`, `min_height`, `max_width` and `max_height` are applied after Align/Anchors (0 means no limit).
+
+## Serialization (M2)
+
+Every control class declares a `static published` list of `{ name, type, default_value }` entries (base list: `gmforms_base_published()`; subclasses `array_concat()` their own on top, which can override a base default). Only non-default published properties are written to JSON — see plan section 5 for the file format.
+
+```gml
+// Save
+gmforms_save_form("main.gmform.json", form);   // writes to Included Files (datafiles/)
+
+// Load, binding "onClick": "btnSave_Click" style handlers by name
+function MainHandlers() constructor {
+    btnSave_Click = function(_sender) { save_map(); };
+}
+var _form = gmforms_load_form("main.gmform.json", new MainHandlers());
+gmforms_host_create(_form);
+```
+
+- A missing handler name logs one warning and leaves that event unset — it still doesn't crash, and the name is kept so re-saving the form doesn't lose it.
+- An unknown `class` logs a warning and that node (and its subtree) is skipped; siblings still load.
+- Anchored controls (`align: "none"`) save the design rect captured at first layout, not whatever their current (possibly resized) rect is.
+- Custom control classes register themselves with `gmforms_register("MyClass", MyCtor)` so the loader can instantiate them.
 
 ## Choices made for open questions
 

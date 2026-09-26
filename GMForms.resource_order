@@ -1,0 +1,16 @@
+{
+  "FolderOrderSettings":[],
+  "ResourceOrderSettings":[
+    {"name":"obj_demo_m1","order":0,"path":"objects/obj_demo_m1/obj_demo_m1.yy",},
+    {"name":"obj_gmforms_host","order":1,"path":"objects/obj_gmforms_host/obj_gmforms_host.yy",},
+    {"name":"rm_demo_m1","order":2,"path":"rooms/rm_demo_m1/rm_demo_m1.yy",},
+    {"name":"demo_m1","order":3,"path":"scripts/demo_m1/demo_m1.yy",},
+    {"name":"gmforms_control","order":4,"path":"scripts/gmforms_control/gmforms_control.yy",},
+    {"name":"gmforms_controls_basic","order":5,"path":"scripts/gmforms_controls_basic/gmforms_controls_basic.yy",},
+    {"name":"gmforms_core","order":6,"path":"scripts/gmforms_core/gmforms_core.yy",},
+    {"name":"gmforms_form","order":7,"path":"scripts/gmforms_form/gmforms_form.yy",},
+    {"name":"gmforms_host","order":8,"path":"scripts/gmforms_host/gmforms_host.yy",},
+    {"name":"gmforms_tests","order":9,"path":"scripts/gmforms_tests/gmforms_tests.yy",},
+    {"name":"gmforms_theme","order":10,"path":"scripts/gmforms_theme/gmforms_theme.yy",},
+  ],
+}

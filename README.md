@@ -2,7 +2,7 @@
 
 A Delphi-style RAD form system for GameMaker. See `gamemaker-form-designer-plan.md` for the full plan.
 
-**Status: M1 (runtime core) and M2 (serialization) implemented.** Built for GameMaker IDE 2026.0.
+**Status: M1 (runtime core), M2 (serialization) and M3 (Tier 1 controls) implemented.** Built for GameMaker IDE 2026.0.
 
 ## Run the demo
 
@@ -12,18 +12,20 @@ A Delphi-style RAD form system for GameMaker. See `gamemaker-form-designer-plan.
 4. Press **Tab** or **Shift+Tab** to cycle focus, and **Space** or **Enter** to click the focused button.
 5. Use the toolbar's *Toggle palette*, *Toggle inspector* and *Disable top-right* buttons to test reflow when visibility changes, and to test disabled state.
 
-## What's in M1 + M2
+## What's in M1 + M2 + M3
 
 | Script | Contents |
 |---|---|
 | `gmforms_core` | `global.gmforms` state, `gmforms_log`, `gmforms_create`, rect, scissor-stack and drawing helpers |
 | `gmforms_theme` | `gmforms_theme_dark()` (default) and `gmforms_theme_light()` flat-colour themes |
 | `gmforms_control` | `GMF_Control`: tree, setters, **Align + Anchors layout engine**, hit testing, clipped drawing, input hooks |
-| `gmforms_form` | `GMF_Form`: root control and input manager (hover, capture, click, wheel bubbling, focus, Tab order, key routing), `update()` / `render()` |
-| `gmforms_controls_basic` | `GMF_Panel`, `GMF_Button`, `GMF_Label` |
+| `gmforms_form` | `GMF_Form`: root control and input manager (hover, capture, click, wheel bubbling, focus, Tab order, key routing, typed-character and clipboard-key forwarding), `update()` / `render()` |
+| `gmforms_controls_basic` | `GMF_Panel`, `GMF_Button`, `GMF_Label`, `GMF_CheckBox`, `GMF_Splitter` |
+| `gmforms_controls_viewport` | `GMF_Viewport`: pannable/zoomable camera over its own surface, for hosting your own GML drawing |
+| `gmforms_controls_edit` | `GMF_Edit`: single-line text — caret, selection, clipboard, scroll, password mode |
 | `gmforms_host` + `obj_gmforms_host` | Host object: tracks window size, resizes `application_surface` and the GUI layer to it (1:1, no letterboxing), resizes the form, forwards Step / Draw GUI |
 | `gmforms_serialize` | Registry-driven JSON save/load: `gmforms_form_to_json`, `gmforms_save_form`, `gmforms_load_form` / `gmforms_load_form_json`, event-name binding, `gmforms_value_equals` |
-| `gmforms_tests` | 144 headless checks of Align, Anchors, reflow, hit testing, focus/Tab, keyboard clicks and M2 serialization round-trips. They run at demo start when `GMF_RUN_TESTS` is true and print `[GMForms tests] N passed, M failed` to the Output window |
+| `gmforms_tests` | 208 headless checks of Align, Anchors, reflow, hit testing, focus/Tab, keyboard clicks, M2 serialization round-trips, and M3 controls (CheckBox toggling, Splitter drag-resize, Viewport camera math, Edit text editing). They run at demo start when `GMF_RUN_TESTS` is true and print `[GMForms tests] N passed, M failed` to the Output window |
 
 ## Minimal usage
 
@@ -44,6 +46,27 @@ gmforms_host_create(form);
 - `left`/`top` are relative to the parent's top-left corner. Padding affects aligned children only.
 - To move or resize a control from code, use `set_bounds()` or `set({...})`. They re-capture anchors. Assigning `left`/`width` directly on an anchored control is overwritten by the next layout.
 - `min_width`, `min_height`, `max_width` and `max_height` are applied after Align/Anchors (0 means no limit).
+- **`GMF_Splitter`** resizes the nearest *earlier* sibling with the same `align` (Delphi-exact, no explicit target). A left/top-aligned splitter grows its target when dragged away from the center; a right/bottom-aligned one shrinks its target when dragged toward it.
+
+## Controls (M3)
+
+**Viewport** hosts your own drawing behind a pan/zoom camera:
+```gml
+var _vp = form.add(gmforms_create(GMF_Viewport, { name: "vpMap", align: "client", grid_size: 32 }));
+_vp.on_draw = function(_sender, _cam) {
+    // draw in world coordinates — the viewport already applied cam's translate/zoom
+    draw_set_colour(c_lime);
+    draw_rectangle(0, 0, 64, 64, false);
+};
+```
+Pan with middle-mouse or Space+left-drag; zoom with the wheel (zooms toward the cursor). `cam = {x, y, zoom}`; use `_vp.screen_to_world(x, y)` / `_vp.world_to_screen(x, y)` to convert.
+
+**Edit** is a single-line text box:
+```gml
+var _ed = form.add(gmforms_create(GMF_Edit, { name: "edName", left: 8, top: 8, width: 200 }));
+_ed.on_change = function(_sender, _text) { show_debug_message("now: " + _text); };
+```
+Supports caret movement, Shift-extend selection, Ctrl+A/C/X/V, mouse click/drag-select, horizontal scroll, and `password: true` for masked input.
 
 ## Serialization (M2)
 

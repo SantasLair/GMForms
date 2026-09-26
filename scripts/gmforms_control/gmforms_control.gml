@@ -571,6 +571,10 @@ function GMF_Control() constructor {
         if (is_callable(on_key_up)) on_key_up(self, _key);
     };
 
+    /// @func key_char(ch)
+    /// @desc Called once per printable typed character (see GMF_Form._update_keys). Default: no-op.
+    static key_char = function(_ch) {};
+
     static focus_gained = function() {
         if (is_callable(on_focus)) on_focus(self);
     };

@@ -28,6 +28,8 @@
     {"id":{"name":"demo_m1","path":"scripts/demo_m1/demo_m1.yy",},},
     {"id":{"name":"gmforms_control","path":"scripts/gmforms_control/gmforms_control.yy",},},
     {"id":{"name":"gmforms_controls_basic","path":"scripts/gmforms_controls_basic/gmforms_controls_basic.yy",},},
+    {"id":{"name":"gmforms_controls_edit","path":"scripts/gmforms_controls_edit/gmforms_controls_edit.yy",},},
+    {"id":{"name":"gmforms_controls_viewport","path":"scripts/gmforms_controls_viewport/gmforms_controls_viewport.yy",},},
     {"id":{"name":"gmforms_core","path":"scripts/gmforms_core/gmforms_core.yy",},},
     {"id":{"name":"gmforms_form","path":"scripts/gmforms_form/gmforms_form.yy",},},
     {"id":{"name":"gmforms_host","path":"scripts/gmforms_host/gmforms_host.yy",},},

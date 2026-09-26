@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tools/gmtest.sh)",
+      "Bash(tools/gmtest.sh *)",
+      "Bash(./tools/gmtest.sh)",
+      "Bash(./tools/gmtest.sh *)",
+      "Bash(npx --yes @gamemaker/gm-cli@latest *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)"
+    ]
+  }
+}

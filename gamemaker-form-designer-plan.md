@@ -4,7 +4,7 @@
 
 Working name: **GMForms** (placeholder — rename freely)
 
-> **Progress (2026-09-25):** M1 is done and tested in GameMaker LTS 2026: the project runs, screenshots were checked at 3 window sizes, and the headless suite passes. M2 (registry, published property metadata, JSON load/save, event binding) is now implemented and verified: `gm-cli` (see CLAUDE.md) built and ran the project headlessly and confirmed `[GMForms tests] 144 passed, 0 failed`, including every M2 warning path. See `README.md` and CLAUDE.md's "M2 notes". Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi). Next up: **M3 Tier 1 controls**.
+> **Progress (2026-09-26):** M1 (runtime core) and M2 (serialization) are done and verified. M3 (Tier 1 controls: CheckBox, Splitter, Viewport, Edit) is now also done and verified — headless suite is at `[GMForms tests] 208 passed, 0 failed` via `tools/gmtest.sh` (see CLAUDE.md), plus a manual visual check of Viewport's surface/camera rendering. Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi); Q6 → resolved, see section 18. Next up: **M4 PropertyGrid + undo** (the key checkpoint: build a tiny tile editor by hand to prove the design).
 
 ---
 
@@ -290,6 +290,22 @@ Purpose: host the user's own GML drawing for level/sprite/path editors.
 - Events: `on_draw(sender, cam)` (called with the surface as target and a world transform applied), `on_mouse_down/up/move(sender, world_x, world_y, button)`, `on_wheel`.
 - Draws the surface into its bounds with scissor clipping.
 
+**Implementation notes (M3, `GMF_Viewport` in `scripts/gmforms_controls_viewport`):** the camera is
+top-left-anchored — `cam.x`/`cam.y` is the world point shown at the viewport's local `(0,0)`:
+```
+screen_to_world(lx, ly) = { x: cam.x + lx/cam.zoom, y: cam.y + ly/cam.zoom }
+world_to_screen(wx, wy) = { x: (wx-cam.x)*cam.zoom, y: (wy-cam.y)*cam.zoom }
+```
+Zoom-to-cursor (`zoom_at`) adjusts `cam.x/y` after changing `cam.zoom` so the world point under the
+cursor stays fixed on screen. Wheel factor is `power(1.1, -delta)` (wheel-up, `delta<0`, zooms in).
+`on_mouse_down`/`on_mouse_up`/`on_mouse_move` reuse the *same field names* as the base `GMF_Control`
+events but carry world-space coordinates for this control specifically (matches this section's own
+JSON example, which uses the plain `onMouseDown` name). Verified headlessly (coordinate math) and
+visually (a manual screenshot check confirmed the surface/matrix render pipeline draws world content
+at the correct screen position). Known limitation: no control-level `destroy()` hook exists yet, so a
+Viewport's surface isn't freed if the control is removed mid-session (GameMaker frees all surfaces at
+room end, so this only matters for dynamic add/remove scenarios, which aren't in scope yet).
+
 ---
 
 ## 11. PropertyGrid control (key feature)
@@ -380,7 +396,7 @@ Status bar
 |---|---|---|
 | **M1 Runtime core** | Control base, tree, layout engine (Align + Anchors), host object, resize handling, theme basics, input manager (hover, click, capture, focus, tab order) | A hand-coded form with top/left/client panels and anchored buttons reflows correctly on window resize; Tab cycles focus |
 | **M2 Serialization** | Registry, published metadata, JSON load/save, event binding (both styles) | A form round-trips JSON → tree → JSON with no diffs; missing handlers produce warnings — **done, verified via headless `gm-cli` run** |
-| **M3 Tier 1 controls** | Panel, Label, Button, CheckBox, Splitter, Viewport, Edit | Viewport pans/zooms and calls user draw code; Edit supports caret, selection, clipboard |
+| **M3 Tier 1 controls** | Panel, Label, Button, CheckBox, Splitter, Viewport, Edit | Viewport pans/zooms and calls user draw code; Edit supports caret, selection, clipboard — **done, verified via headless `gm-cli` run + a manual visual check of Viewport rendering** |
 | **M4 PropertyGrid + undo** | PropertyGrid with inferred and metadata-driven editors; undo helper | **Sample: tiny tile editor** built by hand — tile palette, map viewport, property grid for selected tile, save/load JSON, undo |
 | **M5 Tier 2 controls** | TreeView, Tabs, ListBox, ComboBox + popup layer, MenuBar/popup menus, Toolbar, SpinEdit, Slider, ColorPicker, SpritePicker | Menus and dropdowns render above everything and close correctly on outside click/Escape |
 | **M6 Designer MVP** | Section 14 MVP features | The M4 tile editor's form can be recreated entirely in the designer and loads in the sample |
@@ -409,7 +425,7 @@ Status bar
 - **Q3** Should the Anchors "neither left nor right" case keep proportional position (Delphi) or just keep left?
 - **Q4** Minimum supported GameMaker version.
 - **Q5** License (MIT? free + paid pro controls?) and distribution (GitHub, itch.io, GameMaker Marketplace).
-- **Q6** Should Splitter follow Delphi's "resize the previous aligned sibling" rule exactly, or target an explicit control?
+- **Q6** ~~Should Splitter follow Delphi's "resize the previous aligned sibling" rule exactly, or target an explicit control?~~ **Resolved (M3):** implicit previous-aligned-sibling, Delphi-exact — no `target` property. Sign convention: a left/top-aligned splitter grows its target when dragged away from center; a right/bottom-aligned one shrinks its target when dragged toward it. See CLAUDE.md's M3 notes for the worked example.
 - **Q7** Final product name.
 
 ---

@@ -185,6 +185,184 @@ function gmforms_run_tests() {
     _t.eq("unsupported version rejected", gmforms_load_form_json(json_stringify({ format: "gmforms", version: 2, root: { class: "Form" } })), undefined);
     _t.eq("wrong format rejected", gmforms_load_form_json(json_stringify({ format: "nope", version: 1, root: {} })), undefined);
 
+    // --- M3: CheckBox ---------------------------------------------------------------
+    var _cb = gmforms_create(GMF_CheckBox, { name: "cbTest" });
+    _t.eq("checkbox default unchecked", _cb.checked, false);
+    var _cbc = { changes: 0, last: undefined, clicks: 0 };
+    _cb.on_change = method(_cbc, function(_s, _v) { changes++; last = _v; });
+    _cb.on_click  = method(_cbc, function(_s) { clicks++; });
+    _cb.click();
+    _t.eq("checkbox click toggles checked", _cb.checked, true);
+    _t.eq("checkbox fires on_change", _cbc.changes, 1);
+    _t.eq("checkbox on_change value", _cbc.last, true);
+    _t.eq("checkbox fires on_click too", _cbc.clicks, 1);
+    _cb.click();
+    _t.eq("checkbox click toggles back", _cb.checked, false);
+    _cb.key_down(vk_space); _cb.key_up(vk_space);
+    _t.eq("space toggles checkbox", _cb.checked, true);
+    _cb.set_enabled(false);
+    _cb.key_down(vk_space); _cb.key_up(vk_space);
+    _t.eq("disabled checkbox ignores space", _cb.checked, true);
+    var _cbs = gmforms_control_to_struct(gmforms_create(GMF_CheckBox, { name: "cbPlain" }));
+    _t.eq("checkbox default checked omitted", struct_exists(_cbs, "checked"), false);
+    _t.eq("checkbox class name", _cbs[$ "class"], "CheckBox");
+
+    // --- M3: Splitter -----------------------------------------------------------------
+    var _sf = gmforms_create(GMF_Form, { width: 600, height: 300 });
+    var _pal = _sf.add(gmforms_create(GMF_Panel, { name: "palLeft", align: "left", width: 200 }));
+    var _spl = _sf.add(gmforms_create(GMF_Splitter, { name: "splLeft", align: "left", width: 4, min_size: 40 }));
+    var _cli = _sf.add(gmforms_create(GMF_Panel, { name: "cliMain", align: "client" }));
+    _sf.layout();
+    _t.rect("splitter(left): palette initial", _pal, 0, 0, 200, 300);
+    _t.rect("splitter(left): splitter initial", _spl, 200, 0, 4, 300);
+    _t.rect("splitter(left): client initial", _cli, 204, 0, 396, 300);
+
+    _spl.mouse_down(2, 10, mb_left);
+    _sf.capture = _spl;
+    _spl.mouse_move(2 + 30, 10);   // drag right 30px -> left-aligned target grows
+    _sf.layout();
+    _t.eq("splitter(left) drag right grows target", _pal.width, 230);
+    _spl.mouse_move(2 - 300, 10);  // drag far left of the original press -> clamps to min_size
+    _sf.layout();
+    _t.eq("splitter(left) clamps to min_size", _pal.width, 40);
+    _spl.mouse_up(2, 10, mb_left);
+    _sf.capture = undefined;
+
+    var _sf2 = gmforms_create(GMF_Form, { width: 600, height: 300 });
+    var _insp = _sf2.add(gmforms_create(GMF_Panel, { name: "insp", align: "right", width: 260 }));
+    var _spl2 = _sf2.add(gmforms_create(GMF_Splitter, { name: "splR", align: "right", width: 4, min_size: 40 }));
+    var _cli2 = _sf2.add(gmforms_create(GMF_Panel, { name: "cliR", align: "client" }));
+    _sf2.layout();
+    _spl2.mouse_down(2, 10, mb_left);
+    _sf2.capture = _spl2;
+    _spl2.mouse_move(2 + 10, 10);  // drag right 10px toward the right-docked target -> shrinks it
+    _sf2.layout();
+    _t.eq("splitter(right) drag right shrinks target", _insp.width, 250);
+    _sf2.capture = undefined;
+
+    _t.eq("splitter registered class name", gmforms_control_to_struct(gmforms_create(GMF_Splitter, { name: "splPlain" }))[$ "class"], "Splitter");
+
+    // --- M3: Viewport -----------------------------------------------------------------
+    var _vp = gmforms_create(GMF_Viewport, { name: "vpTest", width: 400, height: 300 });
+    _vp.cam = { x: 100, y: 50, zoom: 2 };
+    var _w1 = _vp.screen_to_world(40, 30);
+    _t.eq("screen_to_world x", _w1.x, 100 + 40 / 2);
+    _t.eq("screen_to_world y", _w1.y, 50 + 30 / 2);
+    var _s1 = _vp.world_to_screen(_w1.x, _w1.y);
+    _t.eq("world_to_screen round trip x", _s1.x, 40);
+    _t.eq("world_to_screen round trip y", _s1.y, 30);
+
+    _vp.cam = { x: 0, y: 0, zoom: 1 };
+    var _anchor_before = _vp.screen_to_world(100, 80);
+    _vp.zoom_at(100, 80, 2);
+    var _anchor_after = _vp.world_to_screen(_anchor_before.x, _anchor_before.y);
+    _t.eq("zoom_at keeps cursor point fixed x", round(_anchor_after.x), 100);
+    _t.eq("zoom_at keeps cursor point fixed y", round(_anchor_after.y), 80);
+    _t.eq("zoom_at applied factor", _vp.cam.zoom, 2);
+
+    _vp.min_zoom = 0.5; _vp.max_zoom = 4;
+    _vp.zoom_at(0, 0, 100);
+    _t.eq("zoom clamps to max_zoom", _vp.cam.zoom, 4);
+    _vp.zoom_at(0, 0, 0.0001);
+    _t.eq("zoom clamps to min_zoom", _vp.cam.zoom, 0.5);
+
+    _vp.cam = { x: 0, y: 0, zoom: 2 };
+    _vp.mouse_down(50, 50, mb_middle);
+    _vp.mouse_move(60, 55);
+    _t.eq("pan moves cam.x opposite drag, scaled by zoom", _vp.cam.x, -10 / 2);
+    _t.eq("pan moves cam.y opposite drag, scaled by zoom", _vp.cam.y, -5 / 2);
+    _vp.mouse_up(60, 55, mb_middle);
+    _t.eq("pan ends on mouse up", _vp._panning, false);
+
+    var _md = { got: undefined };
+    _vp.cam = { x: 10, y: 10, zoom: 2 };
+    _vp.on_mouse_down = method(_md, function(_s, _wx, _wy, _btn) { got = { x: _wx, y: _wy, btn: _btn }; });
+    _vp.mouse_down(20, 20, mb_left);
+    _t.eq("on_mouse_down gets world x", _md.got.x, 10 + 20 / 2);
+    _t.eq("on_mouse_down gets world y", _md.got.y, 10 + 20 / 2);
+    _md.got = undefined;
+    _vp.mouse_down(20, 20, mb_middle);
+    _t.eq("panning click does not fire on_mouse_down", _md.got, undefined);
+    _vp.mouse_up(20, 20, mb_middle);
+
+    var _vp2 = gmforms_create(GMF_Viewport, { name: "vpWheel", width: 200, height: 200 });
+    _vp2.cam = { x: 0, y: 0, zoom: 1 };
+    var _wc = { fired: 0 };
+    _vp2.on_wheel = method(_wc, function(_s, _d) { fired++; });
+    _vp2.mouse_wheel(-1);
+    _t.eq("wheel up zooms in", _vp2.cam.zoom > 1, true);
+    _vp2.mouse_wheel(1);
+    _t.eq("on_wheel fires per call", _wc.fired, 2);
+
+    _t.eq("viewport registered class name", gmforms_control_to_struct(gmforms_create(GMF_Viewport, { name: "vpPlain" }))[$ "class"], "Viewport");
+
+    // --- M3: Edit ---------------------------------------------------------------------
+    var _ed = gmforms_create(GMF_Edit, { name: "edTest" });
+    var _edc = { changes: 0 };
+    _ed.on_change = method(_edc, function(_s, _v) { changes++; });
+    _ed.key_char("H"); _ed.key_char("i");
+    _t.eq("typed text", _ed.text, "Hi");
+    _t.eq("caret after typing", _ed._caret, 2);
+    _t.eq("on_change fired per keystroke", _edc.changes, 2);
+
+    _ed.key_char(chr(8));
+    _t.eq("control char ignored by key_char", _ed.text, "Hi");
+
+    _ed.key_down(vk_backspace);
+    _t.eq("backspace deletes before caret", _ed.text, "H");
+    _ed._move_caret(0, false);
+    _ed.key_down(vk_delete);
+    _t.eq("delete removes after caret", _ed.text, "");
+
+    _ed.text = "Hello World";
+    _ed.select_all();
+    _t.eq("select_all selects to end", _ed._caret, string_length(_ed.text));
+    _ed.key_down(vk_backspace);
+    _t.eq("backspace with full selection clears text", _ed.text, "");
+
+    _ed.text = "Hello";
+    _ed._move_caret(0, false);
+    _ed._move_caret(3, true);
+    _t.eq("_move_caret extends selection", _ed._sel_anchor, 0);
+    _ed._insert_text("X");
+    _t.eq("typing replaces selection", _ed.text, "Xlo");
+
+    _ed.text = "sample text";
+    _ed.select_all();
+    _ed.cut();
+    _t.eq("cut removes selected text regardless of OS clipboard result", _ed.text, "");
+    _ed._insert_text("pasted");
+    _t.eq("insertion used by paste() works", _ed.text, "pasted");
+
+    _t.eq("_index_at_x clicking far left is index 0", _ed._index_at_x(0), 0);
+    _t.eq("_index_at_x clicking far right clamps to text length", _ed._index_at_x(999999), string_length(_ed.text));
+
+    _ed.password = true;
+    _t.eq("password mode still bounds index to text length", _ed._index_at_x(999999), string_length(_ed.text));
+
+    var _ed2 = gmforms_create(GMF_Edit, { name: "edScroll", width: 50 });
+    _ed2.text = string_repeat("x", 50);
+    _ed2._move_caret(string_length(_ed2.text), false);
+    _t.eq("scroll_x advances when caret goes beyond the visible width", _ed2._scroll_x > 0, true);
+
+    _t.eq("edit default text omitted", struct_exists(gmforms_control_to_struct(gmforms_create(GMF_Edit, { name: "edPlain" })), "text"), false);
+
+    // --- M3: combined round trip --------------------------------------------------------
+    var _m3f = gmforms_create(GMF_Form, { name: "frmM3", width: 400, height: 300 });
+    var _m3cb = _m3f.add(gmforms_create(GMF_CheckBox, { name: "cbM3", caption: "Enable" }));
+    _m3cb._ev_names[$ "on_change"] = "cbM3_Change";
+    var _m3sp = _m3f.add(gmforms_create(GMF_Splitter, { name: "splM3", align: "left" }));
+    var _m3vp = _m3f.add(gmforms_create(GMF_Viewport, { name: "vpM3", align: "client" }));
+    _m3vp._ev_names[$ "on_draw"] = "vpM3_Draw";
+    var _m3ed = _m3f.add(gmforms_create(GMF_Edit, { name: "edM3", text: "hi" }));
+
+    var _m3json1 = gmforms_form_to_json(_m3f);
+    var _m3tree2 = gmforms_load_form_json(_m3json1, { cbM3_Change: function(_s, _v) {}, vpM3_Draw: function(_s, _c) {} });
+    var _m3json2 = gmforms_form_to_json(_m3tree2);
+    _t.eq("M3 round trip is stable", _m3json1, _m3json2);
+    _t.eq("M3 checkbox event resolved", is_callable(_m3tree2.find("cbM3").on_change), true);
+    _t.eq("M3 viewport event resolved", is_callable(_m3tree2.find("vpM3").on_draw), true);
+
     var _ok = (_t.failed == 0);
     show_debug_message("[GMForms tests] " + string(_t.passed) + " passed, " + string(_t.failed) + " failed");
     return _ok;

@@ -23,6 +23,10 @@ function gmforms_init() {
     gmforms_register("Panel", GMF_Panel);
     gmforms_register("Button", GMF_Button);
     gmforms_register("Label", GMF_Label);
+    gmforms_register("CheckBox", GMF_CheckBox);
+    gmforms_register("Splitter", GMF_Splitter);
+    gmforms_register("Viewport", GMF_Viewport);
+    gmforms_register("Edit", GMF_Edit);
 
     return global.gmforms;
 }

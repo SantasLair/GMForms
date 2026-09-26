@@ -37,6 +37,9 @@ function GMF_Form() : GMF_Control() constructor {
         vk_home, vk_end, vk_pageup, vk_pagedown,
     ];
     static _mouse_buttons = [mb_left, mb_right, mb_middle];
+    // Clipboard/select-all keys, forwarded to key_down only while Ctrl is held (see _update_keys) —
+    // plain "A"/"C"/"X"/"V" never reach key_down; they only arrive via key_char (typed text).
+    static _clipboard_keys = [ ord("A"), ord("C"), ord("X"), ord("V") ];
 
     // -----------------------------------------------------------------------
     // Bounds and layout
@@ -222,6 +225,28 @@ function GMF_Form() : GMF_Control() constructor {
             if (focused == undefined) return;
             if (keyboard_check_released(_k)) focused.key_up(_k);
             if (focused == undefined) return;
+        }
+
+        if (keyboard_check(vk_control)) {
+            var _cn = array_length(_clipboard_keys);
+            for (var _i = 0; _i < _cn; _i++) {
+                var _k = _clipboard_keys[_i];
+                if (keyboard_check_pressed(_k)) focused.key_down(_k);
+                if (focused == undefined) return;
+            }
+        }
+
+        // Printable typed characters. GMF_Form is the sole consumer of keyboard_string (cleared after
+        // reading each frame) — a control needing typed text should implement key_char, not read it directly.
+        if (keyboard_string != "") {
+            var _s = keyboard_string;
+            keyboard_string = "";
+            var _len = string_length(_s);
+            for (var _i = 1; _i <= _len; _i++) {
+                var _ch = string_char_at(_s, _i);
+                if (ord(_ch) >= 32) focused.key_char(_ch);
+                if (focused == undefined) return;
+            }
         }
     };
 

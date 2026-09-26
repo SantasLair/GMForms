@@ -13,6 +13,8 @@ function GMF_Edit() : GMF_Control() constructor {
     _caret = 0;
     _sel_anchor = 0;   // == _caret means no selection
     _scroll_x = 0;     // pixel horizontal scroll offset
+    _focus_proxy = undefined;   // control whose focus this Edit shows (PropertyGrid's in-place editor)
+    _inset_r = 0;               // pixels on the right kept free of text (GMF_SpinEdit draws its buttons there)
 
     static published = array_concat(gmforms_base_published(), [
         { name: "text",     type: "string", default_value: "" },
@@ -20,6 +22,14 @@ function GMF_Edit() : GMF_Control() constructor {
         { name: "width",    type: "int",    default_value: 120 },
         { name: "height",   type: "int",    default_value: 24 },
     ]);
+
+    /// @func is_focused()
+    /// @desc True if this Edit (or its _focus_proxy, for an in-place editor) has keyboard focus.
+    static is_focused = function() {
+        var _c = _focus_proxy ?? self;
+        var _f = _c.get_form();
+        return (_f != undefined && _f.focused == _c);
+    };
 
     static _visible_text = function() {
         return password ? string_repeat("*", string_length(text)) : text;
@@ -46,7 +56,7 @@ function GMF_Edit() : GMF_Control() constructor {
         var _th = gmforms_theme();
         if (_th.font != -1) draw_set_font(_th.font);
         var _caret_px = string_width(string_copy(_visible_text(), 1, _caret));
-        var _view_w = max(0, width - _th.text_padding * 2);
+        var _view_w = max(0, width - _inset_r - _th.text_padding * 2);
         if (_caret_px - _scroll_x > _view_w) _scroll_x = _caret_px - _view_w;
         if (_caret_px - _scroll_x < 0) _scroll_x = _caret_px;
         _scroll_x = max(0, _scroll_x);
@@ -112,6 +122,11 @@ function GMF_Edit() : GMF_Control() constructor {
 
     static key_down = function(_key) {
         if (is_callable(on_key_down) && on_key_down(self, _key) == true) return true;
+        return _edit_key(_key);
+    };
+
+    /// The editing keys, without the user event (subclasses such as GMF_SpinEdit call this directly).
+    static _edit_key = function(_key) {
         if (!is_enabled()) return false;
         var _ctrl = keyboard_check(vk_control);
         var _shift = keyboard_check(vk_shift);
@@ -147,6 +162,11 @@ function GMF_Edit() : GMF_Control() constructor {
 
     static mouse_down = function(_x, _y, _btn) {
         if (is_callable(on_mouse_down)) on_mouse_down(self, _x, _y, _btn);
+        _edit_mouse_down(_x, _y, _btn);
+    };
+
+    /// Caret placement on press, without the user event.
+    static _edit_mouse_down = function(_x, _y, _btn) {
         if (_btn != mb_left) return;
         var _idx = _index_at_x(_x);
         _caret = _idx;
@@ -166,7 +186,7 @@ function GMF_Edit() : GMF_Control() constructor {
     static draw = function() {
         var _th = gmforms_theme();
         var _en = is_enabled();
-        gmforms_draw_rect(_sx, _sy, width, height, _en ? _th.edit_bg : _th.edit_bg_disabled);
+        gmforms_draw_rect(_sx, _sy, width - _inset_r, height, _en ? _th.edit_bg : _th.edit_bg_disabled);
 
         var _vis = _visible_text();
         if (_th.font != -1) draw_set_font(_th.font);
@@ -179,7 +199,7 @@ function GMF_Edit() : GMF_Control() constructor {
             gmforms_draw_rect(_xa, _sy + 2, _xb - _xa, height - 4, _th.edit_selection);
         }
 
-        if (gmforms_scissor_push(_sx, _sy, width, height)) {
+        if (gmforms_scissor_push(_sx, _sy, width - _inset_r, height)) {
             draw_set_colour(_en ? _th.text : _th.text_disabled);
             draw_set_halign(fa_left); draw_set_valign(fa_middle);
             draw_text(floor(_sx + _pad - _scroll_x), floor(_sy + height * 0.5), _vis);

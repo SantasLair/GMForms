@@ -363,6 +363,620 @@ function gmforms_run_tests() {
     _t.eq("M3 checkbox event resolved", is_callable(_m3tree2.find("cbM3").on_change), true);
     _t.eq("M3 viewport event resolved", is_callable(_m3tree2.find("vpM3").on_draw), true);
 
+    // --- M4: undo stack ------------------------------------------------------------------
+    var _us = new GMF_UndoStack(3);
+    var _doc = { a: 1, b: "x", arr: [10, 20] };
+    var _uc = { changes: 0 };
+    _us.on_change = method(_uc, function(_s) { changes++; });
+    _t.eq("undo: empty can't undo", _us.can_undo(), false);
+    _us.set_value(_doc, "a", 2);
+    _t.eq("undo: set_value applies", _doc.a, 2);
+    _t.eq("undo: can undo after set", _us.can_undo(), true);
+    _t.eq("undo: default label", _us.undo_label(), "Set a");
+    _t.eq("undo: undo() returns true", _us.undo(), true);
+    _t.eq("undo: value reverted", _doc.a, 1);
+    _t.eq("undo: can redo", _us.can_redo(), true);
+    _us.redo();
+    _t.eq("undo: redo re-applies", _doc.a, 2);
+    _us.set_value(_doc.arr, 1, 99, "Arr");
+    _t.eq("undo: array index write", _doc.arr[1], 99);
+    _us.undo();
+    _t.eq("undo: array index undo", _doc.arr[1], 20);
+    _us.set_value(_doc, "b", "y");
+    _t.eq("undo: new push clears redo", _us.can_redo(), false);
+    _t.eq("undo: on_change fired", _uc.changes > 0, true);
+
+    // command structs: functions in the literal see the literal's own fields
+    var _cmdlog = { s: "" };
+    _us.clear();
+    _us.execute({ log: _cmdlog, do_fn: function() { log.s += "d"; }, undo_fn: function() { log.s += "u"; }, label: "L" });
+    _us.undo(); _us.redo();
+    _t.eq("undo: execute/undo/redo run the command", _cmdlog.s, "dud");
+
+    // grouping: one step, undone in reverse order
+    _us.clear();
+    _doc.a = 0;
+    _us.begin_group("drag");
+    _us.set_value(_doc, "a", 1);
+    _us.begin_group("nested");
+    _us.set_value(_doc, "a", 2);
+    _us.end_group();
+    _us.set_value(_doc, "a", 3);
+    _us.end_group();
+    _t.eq("undo: group applies all", _doc.a, 3);
+    _t.eq("undo: group label is the outer one", _us.undo_label(), "drag");
+    _us.undo();
+    _t.eq("undo: group undone as one step", _doc.a, 0);
+    _t.eq("undo: nothing left after group undo", _us.can_undo(), false);
+    _us.redo();
+    _t.eq("undo: group redone in order", _doc.a, 3);
+    _us.begin_group("empty");
+    _us.end_group();
+    _t.eq("undo: empty group records nothing", _us.undo_label(), "drag");
+
+    // limit
+    _us.clear();
+    for (var _i = 1; _i <= 5; _i++) _us.set_value(_doc, "a", _i * 10);
+    var _steps = 0;
+    while (_us.undo()) _steps++;
+    _t.eq("undo: limit keeps only the newest steps", _steps, 3);
+    _t.eq("undo: limit - oldest kept state", _doc.a, 20);
+
+    // pushes during undo/redo are ignored (safe for on_change handlers that record)
+    _us.clear();
+    var _reent = { stack: _us, doc: _doc };
+    _us.execute({ ctx: _reent, do_fn: function() { ctx.doc.a = 7; }, undo_fn: function() { ctx.doc.a = 6; ctx.stack.set_value(ctx.doc, "b", "z"); } });
+    _us.undo();
+    _t.eq("undo: push during undo ignored", _us.can_redo() && !_us.can_undo(), true);
+
+    // snapshot mode
+    _us.clear();
+    var _snapdoc = { v: 1 };
+    var _before = json_stringify(_snapdoc);
+    _snapdoc.v = 5;
+    _us.push_snapshot("snap", _before, json_stringify(_snapdoc), method({ d: _snapdoc }, function(_json) { d.v = json_parse(_json).v; }));
+    _us.undo();
+    _t.eq("undo: snapshot restores before", _snapdoc.v, 1);
+    _us.redo();
+    _t.eq("undo: snapshot restores after", _snapdoc.v, 5);
+    _us.push("not a command");
+    _t.eq("undo: invalid push ignored", _us.undo_label(), "snap");
+
+    // --- M4: PropertyGrid ---------------------------------------------------------------
+    var _pgf = gmforms_create(GMF_Form, { width: 400, height: 400 });
+    var _pg = _pgf.add(gmforms_create(GMF_PropertyGrid, { name: "pgTest", align: "client" }));
+    _pgf.layout();
+    _t.eq("pg: empty grid has no rows", _pg.row_count(), 0);
+
+    var _obj = { name: "Goblin", hp: 12, speed: 1.5, alive: true, stats: { str: 3, dex: 4 }, loot: ["gold", "dagger"], _hidden: 1, fn: function() {} };
+    _pg.bind(_obj);
+    // inferred, sorted, "_" and functions skipped: alive, hp, loot, name, speed, stats
+    _t.eq("pg: inferred row count", _pg.row_count(), 6);
+    _t.eq("pg: rows sorted by name", _pg.get_row(0).label, "alive");
+    _t.eq("pg: bool inferred", _pg.get_row(_pg.find_row("alive")).meta.type, "bool");
+    _t.eq("pg: number inferred as real", _pg.get_row(_pg.find_row("hp")).meta.type, "real");
+    _t.eq("pg: string inferred", _pg.get_row(_pg.find_row("name")).meta.type, "string");
+    _t.eq("pg: struct expandable", _pg.get_row(_pg.find_row("stats")).expandable, true);
+    _t.eq("pg: underscore field hidden", _pg.find_row("_hidden"), -1);
+    _t.eq("pg: function field hidden", _pg.find_row("fn"), -1);
+
+    _pg.toggle_expand(_pg.find_row("stats"));
+    _t.eq("pg: expanding a struct adds its fields", _pg.row_count(), 8);
+    _t.eq("pg: nested path", _pg.get_row(_pg.find_row("stats.dex")).depth, 1);
+    _pg.set_expanded("loot", true);
+    _t.eq("pg: array items shown", _pg.get_row(_pg.find_row("loot.1")).label, "[1]");
+    _t.eq("pg: array item value", _pg.get_row_value(_pg.find_row("loot.1")), "dagger");
+
+    var _pgc = { n: 0, key: "", old: undefined, nv: undefined, owner: undefined };
+    _pg.on_change = method(_pgc, function(_s, _k, _o, _nv, _ow) { n++; key = _k; old = _o; nv = _nv; owner = _ow; });
+
+    _pg.activate(_pg.find_row("alive"));
+    _t.eq("pg: activate toggles bool", _obj.alive, false);
+    _t.eq("pg: on_change key", _pgc.key, "alive");
+    _t.eq("pg: on_change old/new", _pgc.old == true && _pgc.nv == false, true);
+
+    _pg.set_row_value(_pg.find_row("stats.str"), 9);
+    _t.eq("pg: nested write", _obj.stats.str, 9);
+    _t.eq("pg: on_change owner is the nested struct", _pgc.owner, _obj.stats);
+    _pg.set_row_value(_pg.find_row("loot.0"), "silver");
+    _t.eq("pg: array item write", _obj.loot[0], "silver");
+    var _before_n = _pgc.n;
+    _pg.set_row_value(_pg.find_row("hp"), 12);
+    _t.eq("pg: unchanged value doesn't fire on_change", _pgc.n, _before_n);
+
+    // in-place text editing
+    _pg.focus();
+    _t.eq("pg: begin_edit on a string row", _pg.begin_edit(_pg.find_row("name")), true);
+    _t.eq("pg: editor shows the value", _pg._editor.text, "Goblin");
+    _pg.key_char("X");   // replaces the selected text
+    _pg.key_down(vk_enter);
+    _t.eq("pg: Enter commits the edit", _obj.name, "X");
+    _t.eq("pg: not editing after commit", _pg.is_editing(), false);
+    _pg.begin_edit(_pg.find_row("name"));
+    _pg.key_char("Y");
+    _pg.key_down(vk_escape);
+    _t.eq("pg: Escape cancels the edit", _obj.name, "X");
+    _pg.select(_pg.find_row("speed"));
+    _pg.key_char("2");   // typing on a selected row starts an edit
+    _t.eq("pg: typing starts an edit", _pg.is_editing(), true);
+    _pg.key_char("."); _pg.key_char("5");
+    _pgf.set_focus(undefined);
+    _t.eq("pg: focus loss commits", _obj.speed, 2.5);
+    _pg.begin_edit(_pg.find_row("hp"));
+    _pg._editor.text = "abc";
+    _pg.commit_edit();
+    _t.eq("pg: invalid number is rejected", _obj.hp, 12);
+
+    // metadata: enum with labels, int range + step, readonly, categories
+    var _unit = { kind: 1, level: 5, id: 42, color: c_red, tint: undefined };
+    var _meta = [
+        { name: "kind",  type: "enum", values: [0, 1, 2], labels: ["Orc", "Elf", "Dwarf"], category: "Main" },
+        { name: "level", type: "int", min: 1, max: 10, step: 2, category: "Main" },
+        { name: "id",    type: "int", readonly: true },
+        { name: "color", type: "color", category: "Look" },
+        { name: "tint",  type: "color", category: "Look" },
+    ];
+    _pg.bind(_unit, _meta);
+    // uncategorised first: id, #Main, kind, level, #Look, color, tint
+    _t.eq("pg: metadata row count incl. categories", _pg.row_count(), 7);
+    _t.eq("pg: uncategorised rows come first", _pg.get_row(0).label, "id");
+    _t.eq("pg: category header", _pg.get_row(1).kind, "category");
+    _t.eq("pg: enum label shown", _pg._value_text(_pg.get_row(_pg.find_row("kind"))), "Elf");
+    _pg.activate(_pg.find_row("kind"));
+    _t.eq("pg: enum cycles forward", _unit.kind, 2);
+    _pg.activate(_pg.find_row("kind"));
+    _t.eq("pg: enum wraps", _unit.kind, 0);
+    _pg._key_side(_pg.find_row("kind"), -1);
+    _t.eq("pg: enum cycles back", _unit.kind, 2);
+    _pg._key_side(_pg.find_row("level"), 1);
+    _t.eq("pg: int steps by step", _unit.level, 7);
+    _pg._key_side(_pg.find_row("level"), 1); _pg._key_side(_pg.find_row("level"), 1);
+    _t.eq("pg: int clamps to max", _unit.level, 10);
+    _pg.begin_edit(_pg.find_row("level"));
+    _pg._editor.text = "-4.6";
+    _pg.commit_edit();
+    _t.eq("pg: typed int clamps to min", _unit.level, 1);
+    _pg.set_row_value(_pg.find_row("id"), 7);
+    _t.eq("pg: readonly row not written", _unit.id, 42);
+    _t.eq("pg: readonly row can't be edited", _pg.begin_edit(_pg.find_row("id")), false);
+    _t.eq("pg: colour shown as hex", _pg._value_text(_pg.get_row(_pg.find_row("color"))), "#FF0000");
+    _pg.begin_edit(_pg.find_row("tint"));
+    _pg._editor.text = "#10ff80";
+    _pg.commit_edit();
+    _t.eq("pg: hex parsed to colour", _unit.tint, make_colour_rgb(16, 255, 128));
+    _t.eq("pg: colour hex round trip", gmforms_color_to_hex(gmforms_color_from_hex("#12AB9C")), "#12AB9C");
+    _t.eq("pg: bad hex rejected", gmforms_color_from_hex("#12XB9C"), undefined);
+    _pg.toggle_expand(_pg.find_row("#Main"));
+    _t.eq("pg: collapsing a category hides its rows", _pg.find_row("kind"), -1);
+    _t.eq("pg: collapsed row count", _pg.row_count(), 5);
+    _pg.set_expanded("#Main", true);
+    _t.eq("pg: expanding it again", _pg.find_row("kind") >= 0, true);
+
+    // real with range + fractional step: no float drift
+    var _phys = { f: 0.1 };
+    _pg.bind(_phys, [{ name: "f", type: "real", range: { min: 0, max: 1, step: 0.1 } }]);
+    _pg._key_side(0, 1); _pg._key_side(0, 1);
+    _t.eq("pg: 0.1 steps don't drift", _phys.f, 0.3);
+    _t.eq("pg: number formatting", gmforms_format_number(0.3), "0.3");
+    _t.eq("pg: integer formatting", gmforms_format_number(12), "12");
+
+    // undo integration
+    var _pu = new GMF_UndoStack();
+    _pg.undo = _pu;
+    _pg.bind(_unit, _meta);
+    _pg.set_row_value(_pg.find_row("level"), 4);
+    _pg.activate(_pg.find_row("kind"));
+    _t.eq("pg+undo: two steps recorded", _pu.undo_label(), "Set kind");
+    _pu.undo();
+    _t.eq("pg+undo: enum undone", _unit.kind, 2);
+    _pu.undo();
+    _t.eq("pg+undo: int undone", _unit.level, 1);
+    _pu.redo();
+    _t.eq("pg+undo: redo", _unit.level, 4);
+    _t.eq("pg+undo: on_change fires on redo too", _pgc.key, "level");
+
+    // bind_control: the Object Inspector case, written through set() so layout follows
+    var _bf = gmforms_create(GMF_Form, { width: 300, height: 200 });
+    var _bb = _bf.add(gmforms_create(GMF_Button, { name: "btnInspect", left: 10, top: 10 }));
+    _bf.layout();
+    _pg.undo = undefined;
+    _pg.bind_control(_bb);
+    _t.eq("pg control: events not listed", _pg.find_row("onClick"), -1);
+    _t.eq("pg control: name row", _pg.get_row_value(_pg.find_row("name")), "btnInspect");
+    _pg.set_row_value(_pg.find_row("left"), 50);
+    _bf.layout();
+    _t.eq("pg control: left written through set()", _bb.left, 50);
+    _t.eq("pg control: anchors re-captured", _bb._anc.l, 50);
+    _pg.set_row_value(_pg.find_row("align"), "client");
+    _bf.layout();
+    _t.eq("pg control: align applied by layout", _bb.width, 300);
+    _pg.set_expanded("margin", true);
+    _pg.set_row_value(_pg.find_row("margin.l"), 8);
+    _bf.layout();
+    _t.eq("pg control: nested margin write re-lays out", _bb.left, 8);
+    _pg.begin_edit(_pg.find_row("anchors"));
+    _pg._editor.text = "Right, bottom";
+    _pg.commit_edit();
+    _t.eq("pg control: anchors parsed", gmforms_value_equals(_bb.anchors, ["right", "bottom"]), true);
+
+    _pg.bind(undefined);
+    _t.eq("pg: unbind clears rows", _pg.row_count(), 0);
+    _t.eq("pg: registered class name", gmforms_control_to_struct(gmforms_create(GMF_PropertyGrid, { name: "pgPlain" }))[$ "class"], "PropertyGrid");
+    var _pgjson = gmforms_form_to_json(_pgf);
+    _t.eq("pg: in-place editor not serialized", string_pos("\"Edit\"", _pgjson), 0);
+    _t.eq("pg: form with grid round-trips", gmforms_form_to_json(gmforms_load_form_json(_pgjson)), _pgjson);
+
+    // --- M4: tile editor sample model -----------------------------------------------------
+    var _td = demo_tiles_new_doc(8, 6);
+    var _tu = new GMF_UndoStack();
+    _t.eq("tiles: border is stone", _td.cells[0].t, 2);
+    _tu.begin_group("stroke");
+    demo_tiles_paint(_td, _tu, 1, 1, 4);
+    demo_tiles_paint(_td, _tu, 2, 1, 4);
+    _t.eq("tiles: painting the same tile is a no-op", demo_tiles_paint(_td, _tu, 2, 1, 4), false);
+    _t.eq("tiles: out of range paint ignored", demo_tiles_paint(_td, _tu, 99, 1, 4), false);
+    _tu.end_group();
+    _t.eq("tiles: painted", _td.cells[1 * 8 + 2].t, 4);
+    _tu.undo();
+    _t.eq("tiles: stroke undone as one step", _td.cells[1 * 8 + 1].t + _td.cells[1 * 8 + 2].t, 0);
+    demo_tiles_clear(_td, _tu);
+    _t.eq("tiles: clear empties cells", _td.cells[0].t, -1);
+    _tu.undo();
+    _t.eq("tiles: clear undone from snapshot", _td.cells[0].t, 2);
+    _td.cells[9].tag = "chest";
+    var _tjson = demo_tiles_to_json(_td);
+    var _td2 = demo_tiles_from_json(_tjson);
+    _t.eq("tiles: JSON round trip", demo_tiles_to_json(_td2), _tjson);
+    _t.eq("tiles: bools survive JSON", is_bool(_td2.info.wrap_edges), true);
+    _t.eq("tiles: bad document rejected", demo_tiles_from_json("{\"format\":\"nope\"}"), undefined);
+
+    // --- M5: popup layer + menus ----------------------------------------------------------
+    var _mf = gmforms_create(GMF_Form, { width: 600, height: 400 });
+    var _mlog = { clicks: 0, last: "", sender: undefined, under: 0 };
+    var _mfn = method(_mlog, function(_s, _it) { clicks++; last = _it.caption; sender = _s; });
+    var _mb = _mf.add(gmforms_create(GMF_MenuBar, { name: "mbMain" }));
+    _mb.add_menu("File", [
+        gmforms_menu_item("New", _mfn, { shortcut: "Ctrl+N" }),
+        gmforms_menu_separator(),
+        gmforms_menu_item("Locked", _mfn, { enabled: false, shortcut: "Ctrl+L" }),
+        gmforms_submenu("Recent", [ gmforms_menu_item("a.map", _mfn), gmforms_menu_item("b.map", _mfn) ]),
+        gmforms_menu_item("Exit", _mfn),
+    ]);
+    _mb.add_menu("Edit", [ gmforms_menu_item("Undo", _mfn, { shortcut: "Ctrl+Shift+Z" }) ]);
+    var _under = _mf.add(gmforms_create(GMF_Button, { name: "btnUnder", left: 10, top: 40, width: 400, height: 100 }));
+    _under.on_click = method(_mlog, function(_s) { under++; });
+    _mf.layout();
+
+    _mf.simulate_click(10, 12);
+    _t.eq("menu: pressing a caption opens its menu", array_length(_mf.popups), 1);
+    _t.eq("menu: menubar reports open", _mb.is_open(), true);
+    _t.eq("menu: popup is hit-tested above the tree", _mf.control_at(20, 30), _mf.top_popup());
+    _mf.simulate_key(vk_escape);
+    _t.eq("menu: Escape closes it", array_length(_mf.popups), 0);
+
+    _mf.simulate_click(10, 12);
+    _mf.simulate_click(380, 130);   // on btnUnder, outside the menu
+    _t.eq("menu: outside click closes", array_length(_mf.popups), 0);
+    _t.eq("menu: outside click is consumed", _mlog.under, 0);
+
+    _mf.simulate_click(10, 12);
+    _mf.simulate_click(20, 30);     // "New"
+    _t.eq("menu: item click fires on_click", _mlog.last, "New");
+    _t.eq("menu: sender is the menu bar", _mlog.sender, _mb);
+    _t.eq("menu: item click closes the menu", array_length(_mf.popups), 0);
+
+    _mf.simulate_click(10, 12);
+    _mf.simulate_click(20, 64);     // "Locked" (disabled)
+    _t.eq("menu: disabled item does nothing", _mlog.clicks, 1);
+    _mf.close_popups();
+
+    _mf.simulate_click(10, 12);
+    _mf.simulate_move(20, 88);      // hover "Recent"
+    _t.eq("menu: hovering a submenu item opens it", array_length(_mf.popups), 2);
+    _mf.simulate_key(vk_left);
+    _t.eq("menu: Left closes the submenu", array_length(_mf.popups), 1);
+    _mf.simulate_key(vk_escape);
+    _t.eq("menu: Escape after that closes the menu", array_length(_mf.popups), 0);
+
+    _mb.open_menu(0, true);
+    _t.eq("menu: keyboard open selects the first item", _mf.top_popup()._hot, 0);
+    _mf.simulate_key(vk_down);
+    _t.eq("menu: Down skips separators and disabled items", _mf.top_popup()._hot, 3);
+    _mf.simulate_key(vk_right);
+    _t.eq("menu: Right opens a submenu with its first item selected", _mf.top_popup()._hot, 0);
+    _mf.simulate_key(vk_left);
+    _mf.simulate_key(vk_down);
+    _mf.simulate_key(vk_right);     // on "Exit": no submenu -> next menu-bar menu
+    _t.eq("menu: Right on a plain item moves to the next menu", _mb._open_index, 1);
+    _mf.simulate_key(vk_left);
+    _t.eq("menu: Left on a root menu moves to the previous menu", _mb._open_index, 0);
+    _mf.simulate_key(vk_enter);
+    _t.eq("menu: Enter activates the selected item", _mlog.last, "New");
+
+    _mf.simulate_click(10, 12);
+    var _edit_x = 4 + _mb._caption_rects()[1].x + 2;
+    _mf.simulate_move(_edit_x, 12);
+    _t.eq("menu: hovering another caption switches menus", _mb._open_index, 1);
+    _mf.simulate_key(vk_tab);
+    _t.eq("menu: Tab closes popups", array_length(_mf.popups), 0);
+
+    var _clicks_before = _mlog.clicks;
+    _t.eq("shortcut: Ctrl+N handled", _mf.dispatch_shortcut(ord("N"), true, false, false), true);
+    _t.eq("shortcut: fired the item", _mlog.clicks, _clicks_before + 1);
+    _t.eq("shortcut: disabled item ignored", _mf.dispatch_shortcut(ord("L"), true, false, false), false);
+    _t.eq("shortcut: modifiers must match", _mf.dispatch_shortcut(ord("Z"), true, false, false), false);
+    _mf.dispatch_shortcut(ord("Z"), true, true, false);
+    _t.eq("shortcut: Ctrl+Shift+Z", _mlog.last, "Undo");
+    _t.eq("shortcut: parse F5", gmforms_parse_shortcut("F5").key, vk_f5);
+    var _psc = gmforms_parse_shortcut("Ctrl+Alt+Del");
+    _t.eq("shortcut: parse Ctrl+Alt+Del", _psc.ctrl && _psc.alt && !_psc.shift && _psc.key == vk_delete, true);
+    _t.eq("shortcut: bad modifier rejected", gmforms_parse_shortcut("Hyper+X"), undefined);
+    _t.eq("shortcut: plain letter is not a shortcut key", gmforms_is_shortcut_key(ord("S"), false, false), false);
+    _t.eq("shortcut: Ctrl+letter is", gmforms_is_shortcut_key(ord("S"), true, false), true);
+    _t.eq("shortcut: F3 alone is", gmforms_is_shortcut_key(vk_f3, false, false), true);
+    _t.eq("shortcut: Ctrl itself is not", gmforms_is_shortcut_key(vk_control, true, false), false);
+
+    // context menu
+    var _ctx = _mf.add(gmforms_create(GMF_Panel, { name: "pnlCtx", left: 420, top: 200, width: 150, height: 100 }));
+    _ctx.popup_menu = gmforms_create(GMF_PopupMenu, { items: [ gmforms_menu_item("Rename", _mfn), gmforms_menu_item("Delete", _mfn) ] });
+    _mf.simulate_click(450, 220, mb_right);
+    _t.eq("context menu: right-click opens popup_menu", _mf.top_popup(), _ctx.popup_menu);
+    _t.eq("context menu: popup_component is the clicked control", _ctx.popup_menu.popup_component, _ctx);
+    _mf.simulate_click(460, 230);
+    _t.eq("context menu: item fires with the menu as sender", _mlog.sender == _ctx.popup_menu && _mlog.last == "Rename", true);
+
+    // --- M5: ComboBox (+ dropdown popup) ---------------------------------------------------
+    var _cbo = _mf.add(gmforms_create(GMF_ComboBox, { name: "cboColor", left: 10, top: 300, width: 150, items: ["Red", "Green", "Blue"] }));
+    var _cboc = { n: 0, last: -1 };
+    _cbo.on_change = method(_cboc, function(_s, _i) { n++; last = _i; });
+    _mf.simulate_click(20, 310);
+    _t.eq("combo: click opens the dropdown", _mf.top_popup().class_name, "DropDownList");
+    _t.eq("combo: dropdown opens below", _mf.top_popup().top, 324);
+    _mf.simulate_click(20, 324 + 1 + 20 + 5);   // "Green"
+    _t.eq("combo: picking an item selects it", _cbo.item_index, 1);
+    _t.eq("combo: text", _cbo.get_text(), "Green");
+    _t.eq("combo: pick fires on_change", _cboc.last, 1);
+    _t.eq("combo: pick closes the dropdown", array_length(_mf.popups), 0);
+    _mf.simulate_click(20, 310);
+    _mf.simulate_click(20, 310);
+    _t.eq("combo: clicking the combo again closes it", array_length(_mf.popups), 0);
+    _mf.simulate_click(20, 310);
+    _mf.simulate_click(590, 390);
+    _t.eq("combo: outside click closes without changing", _cbo.item_index == 1 && array_length(_mf.popups) == 0, true);
+    _cbo.key_down(vk_down);
+    _t.eq("combo: Down while closed selects the next item", _cbo.item_index, 2);
+    _cbo.drop_down();
+    _cbo.set_visible(false);
+    _t.eq("popup: hiding the owner closes its popup", array_length(_mf.popups), 0);
+    _cbo.set_visible(true);
+    _cbo.set_bounds(10, 370, 150, 24);
+    _mf.layout();
+    _cbo.drop_down();
+    _t.eq("combo: dropdown flips above when there's no room below", _mf.top_popup().top < 370, true);
+    _mf.close_popups();
+
+    // --- M5: ListBox ---------------------------------------------------------------------
+    var _lb = _mf.add(gmforms_create(GMF_ListBox, { name: "lbItems", left: 250, top: 150, width: 150, height: 100 }));
+    for (var _i = 0; _i < 20; _i++) _lb.add_item("item " + string(_i));
+    var _lbc = { changes: 0, act: 0 };
+    _lb.on_change = method(_lbc, function(_s, _i) { changes++; });
+    _lb.on_activate = method(_lbc, function(_s, _i) { act++; });
+    _mf.simulate_click(260, 150 + 1 + 40 + 5);
+    _t.eq("listbox: click selects the row", _lb.item_index, 2);
+    _t.eq("listbox: click focuses it", _mf.focused, _lb);
+    _mf.simulate_click(260, 150 + 1 + 40 + 5);
+    _t.eq("listbox: double-click activates", _lbc.act, 1);
+    _mf.simulate_key(vk_down);
+    _t.eq("listbox: Down", _lb.item_index, 3);
+    _mf.simulate_key(vk_end);
+    _t.eq("listbox: End selects the last item", _lb.item_index, 19);
+    _t.eq("listbox: End scrolls it into view", _lb._scroll_y, 20 * 20 - 98);
+    _lb.mouse_wheel(-1);
+    _t.eq("listbox: wheel scrolls", _lb._scroll_y, 20 * 20 - 98 - 60);
+    _lb.remove_item(0);
+    _t.eq("listbox: removing above keeps the same item selected", _lb.get_text(), "item 19");
+    _t.eq("listbox: on_change count", _lbc.changes, 3);
+
+    // --- M5: TreeView ----------------------------------------------------------------------
+    var _tv = _mf.add(gmforms_create(GMF_TreeView, { name: "tvScene", left: 10, top: 150, width: 200, height: 140 }));
+    var _na = _tv.add_node(undefined, "A");
+    var _na1 = _tv.add_node(_na, "A1");
+    var _na2 = _tv.add_node(_na, "A2");
+    var _na2a = _tv.add_node(_na2, "A2a");
+    _tv.add_node(undefined, "B");
+    var _tvc = { node: undefined, n: 0 };
+    _tv.on_change = method(_tvc, function(_s, _node) { node = _node; n++; });
+    _t.eq("tree: collapsed roots only", _tv._item_count(), 2);
+    _mf.simulate_click(16, 160);        // A's expander
+    _t.eq("tree: expander click expands", _tv._item_count(), 4);
+    _t.eq("tree: expander click doesn't select", _tv.selected_node, undefined);
+    _mf.simulate_click(60, 150 + 1 + 40 + 5);   // "A2"
+    _t.eq("tree: click selects a node", _tvc.node, _na2);
+    _mf.simulate_key(vk_right);
+    _t.eq("tree: Right expands", _tv._item_count(), 5);
+    _mf.simulate_key(vk_right);
+    _t.eq("tree: Right again goes to the first child", _tv.selected_node, _na2a);
+    _mf.simulate_key(vk_left);
+    _t.eq("tree: Left on a leaf goes to the parent", _tv.selected_node, _na2);
+    _mf.simulate_key(vk_left);
+    _t.eq("tree: Left collapses", _tv._item_count(), 4);
+    _tv.set_expanded(_na, false);
+    _tv.select_node(_na2a);
+    _t.eq("tree: select_node expands ancestors", _tv._item_count(), 5);
+    _t.eq("tree: select_node selects", _tv.get_row_node(_tv.item_index), _na2a);
+    _tv.remove_node(_na2);
+    _t.eq("tree: removing the selected subtree clears the selection", _tv.selected_node, undefined);
+    _t.eq("tree: removed rows", _tv._item_count(), 3);
+    _t.eq("tree: node_parent", _tv.node_parent(_na1), _na);
+
+    // --- M5: ColorPicker -----------------------------------------------------------------------
+    var _cp = _mf.add(gmforms_create(GMF_ColorPicker, { name: "cpTint", left: 250, top: 260, color: c_white }));
+    var _cpc = { n: 0 };
+    _cp.on_change = method(_cpc, function(_s, _c) { n++; });
+    _mf.simulate_click(260, 270);
+    var _cpop = _mf.top_popup();
+    _t.eq("colour: click opens the popup", _cpop.class_name, "ColorPopup");
+    _t.eq("colour: popup flips above when needed", _cpop.top, 260 - 232);
+    _mf.simulate_click(_cpop._sx + 11 + 6 * 23 + 5, _cpop._sy + 156 + 5);   // preset 6 = c_red
+    _t.eq("colour: preset sets the colour", _cp.color, c_red);
+    _t.eq("colour: on_change fired", _cpc.n, 1);
+    _cpop._drag = "sv";
+    _cpop._drag_to(8, 8 + 140);
+    _t.eq("colour: bottom of the SV square is black", _cpop.get_color(), c_black);
+    _cpop._drag = "";
+    _mf.simulate_key(vk_escape);
+    _t.eq("colour: Escape closes", array_length(_mf.popups), 0);
+
+    // --- M5: PropertyGrid popup editors --------------------------------------------------------
+    var _pgu = new GMF_UndoStack();
+    var _gunit = { kind: 0, tint: c_red };
+    _pg.undo = _pgu;
+    _pg.bind(_gunit, [
+        { name: "kind", type: "enum", values: [0, 1, 2], labels: ["Orc", "Elf", "Dwarf"] },
+        { name: "tint", type: "color" },
+    ]);
+    _pgf.layout();
+    _pgf.simulate_click(_pg.name_width + 30, 5);
+    _t.eq("pg: enum click opens a dropdown", _pgf.top_popup().class_name, "DropDownList");
+    _pgf.simulate_click(_pg.name_width + 30, 22 + 1 + 20 + 5);    // "Elf"
+    _t.eq("pg: dropdown pick writes the value", _gunit.kind, 1);
+    _t.eq("pg: dropdown pick is one undo step", _pgu.undo_label(), "Set kind");
+    _pgf.simulate_click(_pg.name_width + 8, 22 + 5);                // tint swatch
+    var _gpop = _pgf.top_popup();
+    _t.eq("pg: colour swatch opens the colour popup", _gpop.class_name, "ColorPopup");
+    _gpop.source._cp_set(c_blue, false);
+    _t.eq("pg: live colour preview writes through", _gunit.tint, c_blue);
+    _t.eq("pg: live preview records no undo step", _pgu.undo_label(), "Set kind");
+    _gpop.source._cp_set(c_lime, true);
+    _t.eq("pg: release records one step", _pgu.undo_label(), "Set tint");
+    _pgu.undo();
+    _t.eq("pg: undo restores the colour from before the popup", _gunit.tint, c_red);
+    _pgf.close_popups();
+    _pg.undo = undefined;
+    _pg.bind(undefined);
+
+    // --- M5: TabControl ---------------------------------------------------------------------------
+    var _tf = gmforms_create(GMF_Form, { width: 300, height: 200 });
+    var _tc = _tf.add(gmforms_create(GMF_TabControl, { name: "tabs", align: "client" }));
+    var _tp0 = _tc.add_page("General");
+    var _tp1 = _tc.add_page("Physics");
+    var _tp2 = _tc.add_page("Audio");
+    _tp1.add(gmforms_create(GMF_Label, { name: "lblOnPhysics", caption: "hi" }));
+    _tf.layout();
+    _t.eq("tabs: first page visible", _tp0.visible && !_tp1.visible && !_tp2.visible, true);
+    _t.rect("tabs: page fills the area under the tabs", _tp0, 1, 26, 298, 173);
+    var _trs = _tc._tab_rects();
+    _tf.simulate_click(_trs[2].x + 5, 10);
+    _t.eq("tabs: clicking a tab switches", _tc.tab_index, 2);
+    _t.eq("tabs: only the active page is visible", !_tp0.visible && _tp2.visible, true);
+    _tf.simulate_key(vk_left);
+    _t.eq("tabs: Left when focused", _tc.tab_index, 1);
+    _tc.tab_index = 0;          // assigned directly: layout re-syncs the pages
+    _tc.invalidate_layout();
+    _tf.layout();
+    _t.eq("tabs: direct tab_index assignment syncs on layout", _tp0.visible && !_tp1.visible, true);
+    _tc.set_tab_index(1);
+    var _tjson1 = gmforms_form_to_json(_tf);
+    var _tf2 = gmforms_load_form_json(_tjson1);
+    _t.eq("tabs: JSON round trip", gmforms_form_to_json(_tf2), _tjson1);
+    _tf2.layout();
+    _t.eq("tabs: loaded tab_index", _tf2.find("tabs").tab_index, 1);
+    _t.eq("tabs: loaded page visibility", _tf2.find("tabs").get_page(1).visible && !_tf2.find("tabs").get_page(0).visible, true);
+
+    // --- M5: Toolbar ---------------------------------------------------------------------------------
+    var _tbf = gmforms_create(GMF_Form, { width: 400, height: 100 });
+    var _tb = _tbf.add(gmforms_create(GMF_Toolbar, { name: "tbMain" }));
+    var _tb1 = _tb.add_button("One");
+    var _tbs = _tb.add_separator();
+    var _tb2 = _tb.add_button("Two");
+    _tbf.layout();
+    _t.eq("toolbar: first button at the padding", _tb1.left, 4);
+    _t.eq("toolbar: centred vertically", _tb1.top, 5);
+    _t.eq("toolbar: separator after it", _tbs.left, _tb1.left + _tb1.width + 4);
+    _t.eq("toolbar: next button after the separator", _tb2.left, _tbs.left + _tbs.width + 4);
+    _tb1.set_visible(false);
+    _tbf.layout();
+    _t.eq("toolbar: hidden items take no space", _tbs.left, 4);
+
+    // --- M5: SpinEdit / Slider --------------------------------------------------------------------------
+    var _se = gmforms_create(GMF_SpinEdit, { name: "seCount", min_value: 0, max_value: 10, step: 2 });
+    var _sec = { n: 0 };
+    _se.on_change = method(_sec, function(_s, _v) { n++; });
+    _se.set_value(5);
+    _t.eq("spin: set_value", _se.value, 5);
+    _t.eq("spin: text follows value", _se.text, "5");
+    _se.set_value(99);
+    _t.eq("spin: clamps to max", _se.value, 10);
+    _se.text = "7";
+    _se.commit();
+    _t.eq("spin: typed text commits", _se.value, 7);
+    _se.text = "abc";
+    _se.commit();
+    _t.eq("spin: invalid text reverts", _se.text, "7");
+    _se.key_down(vk_down);
+    _t.eq("spin: Down steps", _se.value, 5);
+    _se.mouse_down(_se.width - 4, 3, mb_left);
+    _t.eq("spin: top button steps up", _se.value, 7);
+    _t.eq("spin: on_change per value change", _sec.n, 5);
+    _se.text = "";
+    _se._caret = 0; _se._sel_anchor = 0;
+    _se.key_char("4"); _se.key_char("x");
+    _t.eq("spin: only numeric characters are typed", _se.text, "4");
+    var _sd = gmforms_create(GMF_SpinEdit, { decimals: 2, max_value: 100 });
+    _sd.set_value(3.14159);
+    _t.eq("spin: rounds to decimals", _sd.text, "3.14");
+
+    var _sl = gmforms_create(GMF_Slider, { name: "slVol", width: 110, step: 5 });
+    _sl.set_value(42);
+    _t.eq("slider: snaps to step", _sl.value, 40);
+    _t.eq("slider: value at left end", _sl._value_at(5), 0);
+    _t.eq("slider: value at right end", _sl._value_at(105), 100);
+    _t.eq("slider: value in the middle", _sl._value_at(55), 50);
+    _sl.key_down(vk_right);
+    _t.eq("slider: Right steps", _sl.value, 45);
+    _sl.key_down(vk_end);
+    _t.eq("slider: End", _sl.value, 100);
+    _sl.mouse_wheel(1);
+    _t.eq("slider: wheel down steps down", _sl.value, 95);
+
+    // --- M5: SpritePicker ------------------------------------------------------------------------------
+    var _surf = surface_create(8, 8);
+    surface_set_target(_surf);
+    draw_clear(c_red);
+    surface_reset_target();
+    var _spr = sprite_create_from_surface(_surf, 0, 0, 8, 8, false, false, 0, 0);
+    surface_free(_surf);
+    var _sp = gmforms_create(GMF_SpritePicker, { name: "spIcon", sprites: [_spr], labels: ["red dot"] });
+    _sp.set_item_index(1);
+    _t.eq("sprite picker: select a sprite", _sp.sprite, _spr);
+    _t.eq("sprite picker: label", _sp.get_text(), "red dot");
+    _sp.set_item_index(0);
+    _t.eq("sprite picker: (none)", _sp.get_text(), "(none)");
+    _t.eq("sprite picker: project sprite list is an array", is_array(gmforms_sprite_list()), true);
+    sprite_delete(_spr);
+
+    // --- M5: serialization of the new classes --------------------------------------------------------
+    var _sf5 = gmforms_create(GMF_Form, { name: "frmM5", width: 500, height: 400 });
+    _sf5.add(gmforms_create(GMF_MenuBar, { name: "mb" }));
+    var _stb = _sf5.add(gmforms_create(GMF_Toolbar, { name: "tb" }));
+    _stb.add_button("Go");
+    _stb.add_separator();
+    _sf5.add(gmforms_create(GMF_ListBox, { name: "lb", items: ["a", "b"], item_index: 1 }));
+    var _stv = _sf5.add(gmforms_create(GMF_TreeView, { name: "tv" }));
+    _stv.add_node(_stv.add_node(undefined, "root"), "leaf");
+    _sf5.add(gmforms_create(GMF_ComboBox, { name: "cb", items: ["x", "y"], item_index: 0 }));
+    _sf5.add(gmforms_create(GMF_SpinEdit, { name: "se", value: 5 }));
+    _sf5.add(gmforms_create(GMF_Slider, { name: "sl", value: 30 }));
+    _sf5.add(gmforms_create(GMF_ColorPicker, { name: "cp", color: c_red }));
+    _sf5.add(gmforms_create(GMF_SpritePicker, { name: "sp" }));
+    var _stc = _sf5.add(gmforms_create(GMF_TabControl, { name: "tc" }));
+    _stc.add_page("One");
+    var _m5json = gmforms_form_to_json(_sf5);
+    var _m5tree = gmforms_load_form_json(_m5json);
+    _t.eq("M5 round trip is stable", gmforms_form_to_json(_m5tree), _m5json);
+    _t.eq("M5 tree nodes survive JSON", _m5tree.find("tv").nodes[0].nodes[0].text, "leaf");
+    _t.eq("M5 spin value survives JSON", _m5tree.find("se").value, 5);
+
     var _ok = (_t.failed == 0);
     show_debug_message("[GMForms tests] " + string(_t.passed) + " passed, " + string(_t.failed) + " failed");
     return _ok;

@@ -98,6 +98,8 @@ function GMF_Control() constructor {
     on_change = undefined;              // (sender, ...)    control specific
     on_resize = undefined;              // (sender)
 
+    popup_menu = undefined;             // a GMF_PopupMenu shown on right-click (Delphi PopupMenu). Code-only, not serialized.
+
     // internal state
     _sx = 0;                            // absolute GUI position, refreshed every layout pass
     _sy = 0;
@@ -582,4 +584,13 @@ function GMF_Control() constructor {
     static focus_lost = function() {
         if (is_callable(on_blur)) on_blur(self);
     };
+
+    /// @func handle_shortcut(key, ctrl, shift, alt)
+    /// @desc Offered every Ctrl/Alt + key and F1–F12 press (GMF_Form walks the visible, enabled tree).
+    ///       Return true to consume it. GMF_MenuBar uses this for menu item shortcuts.
+    static handle_shortcut = function(_key, _ctrl, _shift, _alt) { return false; };
+
+    /// @func popup_closed()
+    /// @desc Called when this control, shown with GMF_Form.show_popup(), is closed.
+    static popup_closed = function() {};
 }

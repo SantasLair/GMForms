@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"gmforms_controls_lists",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"gmforms_controls_lists",
+  "parent":{
+    "name":"GMForms",
+    "path":"folders/GMForms.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

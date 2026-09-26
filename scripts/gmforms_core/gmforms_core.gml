@@ -27,6 +27,19 @@ function gmforms_init() {
     gmforms_register("Splitter", GMF_Splitter);
     gmforms_register("Viewport", GMF_Viewport);
     gmforms_register("Edit", GMF_Edit);
+    gmforms_register("PropertyGrid", GMF_PropertyGrid);
+    gmforms_register("ListBox", GMF_ListBox);
+    gmforms_register("TreeView", GMF_TreeView);
+    gmforms_register("ComboBox", GMF_ComboBox);
+    gmforms_register("SpritePicker", GMF_SpritePicker);
+    gmforms_register("MenuBar", GMF_MenuBar);
+    gmforms_register("TabControl", GMF_TabControl);
+    gmforms_register("TabSheet", GMF_TabSheet);
+    gmforms_register("Toolbar", GMF_Toolbar);
+    gmforms_register("ToolSeparator", GMF_ToolSeparator);
+    gmforms_register("SpinEdit", GMF_SpinEdit);
+    gmforms_register("Slider", GMF_Slider);
+    gmforms_register("ColorPicker", GMF_ColorPicker);
 
     return global.gmforms;
 }
@@ -69,6 +82,18 @@ function gmforms_create(_ctor, _props = undefined) {
     var _c = new _ctor();
     if (is_struct(_props)) _c.set(_props);
     return _c;
+}
+
+/// @func gmforms_inherited(self, ctor, name)
+/// @desc GML has no `super`. This returns the version of a static method defined *directly* on ctor,
+///       bound to self, so an override can call the base behaviour:
+///           static key_down = function(_k) { ...; return gmforms_inherited(self, GMF_Edit, "key_down")(_k); };
+/// @param {Struct} self
+/// @param {Function} ctor The constructor that defines the method (not a grandparent).
+/// @param {String} name
+/// @returns {Function}
+function gmforms_inherited(_self, _ctor, _name) {
+    return method(_self, static_get(_ctor)[$ _name]);
 }
 
 // ---------------------------------------------------------------------------

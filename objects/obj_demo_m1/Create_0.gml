@@ -1,5 +1,5 @@
 /// @desc Build the M1 demo form and wire its events in code (event style B from the plan).
-if (GMF_RUN_TESTS) gmforms_run_tests();
+if (GMF_RUN_TESTS && room == room_first) gmforms_run_tests();
 
 form = demo_m1_build_form();
 status = form.find("lblStatus");

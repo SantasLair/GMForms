@@ -8,15 +8,23 @@
 #   tools/gmtest.sh                  # build + run, print the result line, exit 0 iff 0 failed
 #   tools/gmtest.sh --compile-only   # syntax/asset-compile check only, no game launch (faster)
 #   tools/gmtest.sh --timeout=60     # override how long to wait for the result line (default 90s)
+#   tools/gmtest.sh --log            # print the whole cleaned log (e.g. to read a runtime crash message)
+#   tools/gmtest.sh --until="capture dir" --timeout=120
+#                                    # keep the game running until a log line matches (a *_CAPTURE
+#                                    # screenshot run) or it crashes, instead of stopping at the summary
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 COMPILE_ONLY=0
+FULL_LOG=0
+UNTIL=""
 MAX_WAIT=90
 for arg in "$@"; do
   case "$arg" in
     --compile-only) COMPILE_ONLY=1 ;;
     --timeout=*) MAX_WAIT="${arg#*=}" ;;
+    --log) FULL_LOG=1 ;;
+    --until=*) UNTIL="${arg#*=}" ;;
     *) echo "gmtest: unknown argument '$arg'" >&2; exit 64 ;;
   esac
 done
@@ -38,7 +46,13 @@ fi
 PID=$!
 
 for ((i = 0; i < MAX_WAIT; i++)); do
-  grep -q '\[GMForms tests\]' "$LOG" 2>/dev/null && break
+  # wait for the summary line — FAIL lines also start with "[GMForms tests]" and come first
+  if [ -n "$UNTIL" ]; then
+    grep -q -- "$UNTIL" "$LOG" 2>/dev/null && { sleep 2; break; }
+    grep -q "FATAL ERROR" "$LOG" 2>/dev/null && break
+  else
+    grep -qE '\[GMForms tests\] [0-9]+ passed' "$LOG" 2>/dev/null && break
+  fi
   kill -0 "$PID" 2>/dev/null || break   # process exited early, probably a build error
   sleep 1
 done
@@ -56,9 +70,13 @@ if command -v taskkill >/dev/null 2>&1; then
 fi
 
 CLEAN="$(strip < "$LOG")"
-echo "$CLEAN" | grep -E '\[GMForms\]|\[GMForms tests\]|[Ee]rror'
+if [ "$FULL_LOG" = "1" ]; then
+  echo "$CLEAN"
+else
+  echo "$CLEAN" | grep -E '\[GMForms\]|\[GMForms tests\]|[Ee]rror'
+fi
 
-RESULT_LINE="$(echo "$CLEAN" | grep '\[GMForms tests\]' | tail -1)"
+RESULT_LINE="$(echo "$CLEAN" | grep -E '\[GMForms tests\] [0-9]+ passed' | tail -1)"
 if [ -z "$RESULT_LINE" ]; then
   echo "gmtest: no '[GMForms tests]' line within ${MAX_WAIT}s — build likely failed; full log:" >&2
   echo "$CLEAN" >&2

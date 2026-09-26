@@ -4,7 +4,7 @@
 
 Working name: **GMForms** (placeholder — rename freely)
 
-> **Progress (2026-09-26):** M1 (runtime core) and M2 (serialization) are done and verified. M3 (Tier 1 controls: CheckBox, Splitter, Viewport, Edit) is now also done and verified — headless suite is at `[GMForms tests] 208 passed, 0 failed` via `tools/gmtest.sh` (see CLAUDE.md), plus a manual visual check of Viewport's surface/camera rendering. Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi); Q6 → resolved, see section 18. Next up: **M4 PropertyGrid + undo** (the key checkpoint: build a tiny tile editor by hand to prove the design).
+> **Progress (2026-09-26):** M1–M5 are done. M4, the key checkpoint, was a tile editor built by hand with the library (`scripts/demo_tiles`, first room). M5 added a popup layer in the form, MenuBar/PopupMenu (context menus, submenus, shortcuts), Toolbar, TabControl, ListBox, TreeView, ComboBox, SpinEdit, Slider, ColorPicker and SpritePicker, and the PropertyGrid now uses dropdowns and the colour popup (`scripts/demo_m5` gallery). Headless suite: `[GMForms tests] 433 passed, 0 failed` via `tools/gmtest.sh`, plus scripted screenshot checks of both samples; hands-on interactive use is still to be done in the IDE. Provisional answers: Q1 → `GMF_` prefix; Q3 → proportional centre (Delphi); Q6 → resolved, see section 18. Next up: **M6 Designer MVP**.
 
 ---
 
@@ -272,6 +272,8 @@ Handler signature convention: first argument is always the sender control; extra
 ### Tier 2 — tool essentials
 TreeView, TabControl, ListBox, ComboBox (uses popup layer), MenuBar + popup menus, Toolbar, SpinEdit (numeric), Slider/TrackBar, ScrollBox, ColorPicker, SpritePicker (lists project sprites), Image, ProgressBar, RadioButton/RadioGroup.
 
+**Implementation notes (M5):** there is no separate popup-layer module. `GMF_Form` owns `popups[]` (`show_popup` / `close_popup` / `close_popups`), hit-tests them first, draws them last, consumes outside clicks, and routes Escape/navigation keys to the top popup. Dropdowns (`gmforms_dropdown_open`) and the colour popup (`gmforms_color_popup_open`) take small "source" structs, so ComboBox, SpritePicker and the PropertyGrid share one list popup. Menus are code-only for now; their items hold functions, so they need a handler-name scheme before the designer can save them (M6). The ComboBox is not editable (no typed entry), and the Slider is horizontal only. Right-click opens a control's `popup_menu`, and menu shortcuts go through `GMF_Form.dispatch_shortcut` → `handle_shortcut()`.
+
 ### Tier 3 — later
 Memo (multi-line text), Grid/Table (editable rows), DockPanel (movable tool windows), StatusBar, file dialog wrappers, Toast/notifications.
 
@@ -319,6 +321,8 @@ Purpose: edit a user's struct (enemy stats, tile properties, dialogue node) with
 - `on_change(sender, key, old_value, new_value)` — integrates with the undo helper.
 - The **designer's Object Inspector is this same control** bound to the selected control's published properties.
 
+**Implementation notes (M4, `GMF_PropertyGrid` in `scripts/gmforms_controls_propgrid`):** `bind(target, [metadata])`, `bind_control(control)` (the inspector case: published non-event properties, written through `control.set()`), `refresh()`. Inferred types: bool, string, real (every number — inferring int would round later edits), struct/array (expandable); `_`-prefixed fields and methods are skipped. Metadata entries also accept `labels` (enum display names for `values`), `fields` (nested struct metadata) and `set_fn(owner, field, value)`. Rows are keyed by path (`"stats.hp"`, `"#Category"`); values are read live each frame. The in-place text editor is a private `GMF_Edit`, not a child, so it never ends up in form JSON. `on_change` gets a fifth argument, `owner` (the struct actually written — differs from the target for nested rows), and also fires on undo/redo. Setting `grid.undo` to a `GMF_UndoStack` records every edit. Since M5, enums open a dropdown (keyboard still cycles), colours open the colour popup (live preview, one undo step per drag), and sprites open a thumbnail dropdown; `font` is still edited by name.
+
 ---
 
 ## 12. Theme
@@ -336,6 +340,8 @@ Purpose: edit a user's struct (enemy stats, tile properties, dialogue node) with
 - Command-based: `{ do_fn, undo_fn, label }`, with `undo_push`, `undo()`, `redo()`, `can_undo`, grouping (`begin_group`/`end_group`) for drags.
 - Designer uses it; users get it for their own tools.
 - Simple fallback mode: JSON snapshot per step (fine for small documents).
+
+**Implementation notes (M4, `GMF_UndoStack` in `scripts/gmforms_undo`):** `push(cmd)` records an already-made change, `execute(cmd)` runs `do_fn` first, `set_value(target, key, value, [label], [after_fn])` covers the common field write, and `push_snapshot(label, before, after, restore_fn)` is the snapshot mode. Also `can_redo`, `undo_label`/`redo_label`, `clear`, `limit` and an `on_change(sender)` event for Undo/Redo button state. Groups nest (outer label wins); pushes during an undo/redo are ignored, so recording from an `on_change` handler is safe. Snapshot restores should write into the existing objects rather than replace them, or older command steps that reference those objects are orphaned (the tile sample's *Clear* does this).
 
 ---
 
@@ -397,8 +403,8 @@ Status bar
 | **M1 Runtime core** | Control base, tree, layout engine (Align + Anchors), host object, resize handling, theme basics, input manager (hover, click, capture, focus, tab order) | A hand-coded form with top/left/client panels and anchored buttons reflows correctly on window resize; Tab cycles focus |
 | **M2 Serialization** | Registry, published metadata, JSON load/save, event binding (both styles) | A form round-trips JSON → tree → JSON with no diffs; missing handlers produce warnings — **done, verified via headless `gm-cli` run** |
 | **M3 Tier 1 controls** | Panel, Label, Button, CheckBox, Splitter, Viewport, Edit | Viewport pans/zooms and calls user draw code; Edit supports caret, selection, clipboard — **done, verified via headless `gm-cli` run + a manual visual check of Viewport rendering** |
-| **M4 PropertyGrid + undo** | PropertyGrid with inferred and metadata-driven editors; undo helper | **Sample: tiny tile editor** built by hand — tile palette, map viewport, property grid for selected tile, save/load JSON, undo |
-| **M5 Tier 2 controls** | TreeView, Tabs, ListBox, ComboBox + popup layer, MenuBar/popup menus, Toolbar, SpinEdit, Slider, ColorPicker, SpritePicker | Menus and dropdowns render above everything and close correctly on outside click/Escape |
+| **M4 PropertyGrid + undo** | PropertyGrid with inferred and metadata-driven editors; undo helper | **Sample: tiny tile editor** built by hand — tile palette, map viewport, property grid for selected tile, save/load JSON, undo — **done, verified via headless `gm-cli` run + a scripted screenshot check of the sample** |
+| **M5 Tier 2 controls** | TreeView, Tabs, ListBox, ComboBox + popup layer, MenuBar/popup menus, Toolbar, SpinEdit, Slider, ColorPicker, SpritePicker | Menus and dropdowns render above everything and close correctly on outside click/Escape — **done, verified via headless tests driving the real input path + scripted screenshots of the gallery and tile editor** |
 | **M6 Designer MVP** | Section 14 MVP features | The M4 tile editor's form can be recreated entirely in the designer and loads in the sample |
 | **M7 Release prep** | Samples (tile editor, dialogue editor, data table editor), docs, .yymps package, dark/light themes | A new user can import the package and run a sample in under 10 minutes following the README |
 

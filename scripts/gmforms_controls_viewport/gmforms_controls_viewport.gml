@@ -15,6 +15,8 @@ function GMF_Viewport() : GMF_Control() constructor {
     max_zoom = 8;
     grid_size = 0;          // 0 = no grid overlay
     bg_color = undefined;   // undefined = theme.viewport_bg
+    on_draw = undefined;    // (sender, cam) — draw in world coordinates; the camera transform is already applied
+    on_wheel = undefined;   // (sender, delta) — fired after the built-in zoom
     _surface = -1;
     _surf_w = 0;
     _surf_h = 0;

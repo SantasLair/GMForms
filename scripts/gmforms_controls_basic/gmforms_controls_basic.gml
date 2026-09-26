@@ -38,12 +38,14 @@ function GMF_Button() : GMF_Control() constructor {
     width = 80;
     height = 28;
     tab_stop = true;
+    down = false;               // latched pressed look, e.g. the active tool in a toolbar (Delphi SpeedButton.Down)
     _key_down = false;          // Space/Enter held while focused (pressed look)
 
     static published = array_concat(gmforms_base_published(), [
         { name: "caption", type: "string", default_value: "Button" },
         { name: "width",   type: "int",    default_value: 80 },
         { name: "height",  type: "int",    default_value: 28 },
+        { name: "down",    type: "bool",   default_value: false },
     ]);
 
     static draw = function() {
@@ -51,7 +53,7 @@ function GMF_Button() : GMF_Control() constructor {
         var _en = is_enabled();
         var _col = _th.button;
         if (!_en)                           _col = _th.button_disabled;
-        else if (is_pressed() || _key_down) _col = _th.button_pressed;
+        else if (is_pressed() || _key_down || down) _col = _th.button_pressed;
         else if (is_hot())                  _col = _th.button_hover;
         gmforms_draw_rect(_sx, _sy, width, height, _col);
         gmforms_draw_text_in(_sx, _sy, width, height, caption, _en ? _th.text : _th.text_disabled, fa_center, fa_middle, _th.text_padding);

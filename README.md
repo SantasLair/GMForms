@@ -2,6 +2,10 @@
 
 A Delphi-style RAD form system for GameMaker. See `gamemaker-form-designer-plan.md` for the full plan.
 
+> **This is an experiment.** GMForms was a learning project for exploring Delphi-style forms and a visual designer inside GameMaker. It is not a supported product, has no release schedule, and may change or be abandoned without notice. Expect rough edges, and treat it as a reference for ideas rather than a library to depend on in production.
+
+It is released under the [MIT License](LICENSE).
+
 **Status: M1–M6 implemented:** runtime core, serialization, Tier 1 and Tier 2 controls, PropertyGrid + undo with a tile editor sample, and the visual **form designer** (built with the library itself). Built for GameMaker IDE 2026.0.
 
 ## Run the demos
